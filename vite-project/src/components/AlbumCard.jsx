@@ -1,96 +1,83 @@
-import { useEffect, useState } from "react";
-import { getRelease } from "../services/discogs";
-
-function AlbumCard({ record }) {
-  const [cover, setCover] = useState(null);
-
-  useEffect(() => {
-    async function loadArtwork() {
-    if (!record.release_id) return;
-
-
-
-      try {
-        const album = await getRelease(record.release_id);
-        console.log("Release ID:", record.release_id);
-
-
-        if (album.thumb) {
-          setCover(album.thumb);
-        }
-      } catch (err) {
-        console.log(err);
-      }
+function AlbumCard({
+  record,
+  cover,
+  onClick = () => {},
+  onArtistClick = () => {},
+  id,
+  highlighted = false,
+  favorite = false,
+  rating = 0,
+  artworkStatus = "idle",
+}) {
+  function handleKeyDown(event) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onClick(record);
     }
+  }
 
-    loadArtwork();
-  }, [record.release_id]);
+  function handleArtistClick(event) {
+    event.stopPropagation();
+    onArtistClick(record.Artist);
+  }
 
   return (
-  
-      <li
-  onClick={() => alert(JSON.stringify(record, null, 2))}
-  style={{
-        background: "rgba(255,255,255,0.08)",
-        backdropFilter: "blur(12px)",
-        border: "1px solid rgba(255,255,255,0.15)",
-        borderRadius: "18px",
-        padding: "18px",
-        marginBottom: "16px",
-        boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
-        display: "flex",
-        gap: "20px",
-        alignItems: "center",
-        cursor: "pointer",
-transition: "transform 0.2s ease",
-      }}
+    <li
+      id={id}
+      onClick={() => onClick(record)}
+      onKeyDown={handleKeyDown}
+      role="button"
+      tabIndex={0}
+      className={`album-card${highlighted ? " album-card--highlighted" : ""}`}
     >
-      <div
-        style={{
-          width: "90px",
-          height: "90px",
-          flexShrink: 0,
-        }}
-      >
+      <div className="album-card__art">
         {cover ? (
           <img
             src={cover}
             alt={record.Title}
-            style={{
-              width: "90px",
-              height: "90px",
-              objectFit: "cover",
-              borderRadius: "12px",
-            }}
+            className="album-card__image"
           />
+        ) : artworkStatus === "loading" ? (
+          <div className="artwork-state artwork-state--loading" aria-label="Loading artwork">
+            <span className="artwork-spinner" />
+            <span className="artwork-state__label">Loading artwork</span>
+          </div>
         ) : (
-          <div
-            style={{
-              width: "90px",
-              height: "90px",
-              background: "#222",
-              borderRadius: "12px",
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              color: "#888",
-            }}
-          >
-            💿
+          <div className="artwork-state artwork-state--placeholder" aria-label="No artwork available">
+            <span className="artwork-state__monogram">M&amp;M</span>
+            <span className="artwork-state__label">Music &amp; Memories</span>
           </div>
         )}
       </div>
 
-      <div>
-        <h3 style={{ margin: 0 }}>{record.Artist}</h3>
+      <div className="album-card__body">
+        <p className="album-card__year">{record.Released}</p>
 
-        <p style={{ margin: "6px 0", color: "#ddd" }}>
-          {record.Title}
-        </p>
+        <h3 className="album-card__artist">
+          <button
+            type="button"
+            className="artist-link-button"
+            onClick={handleArtistClick}
+          >
+            {record.Artist}
+          </button>
+        </h3>
 
-        <p style={{ color: "#999", margin: 0 }}>
-          {record.Released}
-        </p>
+        <p className="album-card__title">{record.Title}</p>
+
+        <div className="album-card__footer">
+          <span className={`album-card__heart${favorite ? " is-active" : ""}`}>
+            {favorite ? "❤️" : "🤍"}
+          </span>
+
+          <div className="album-card__stars" aria-label={`Rated ${rating} out of 5`}>
+            {[1, 2, 3, 4, 5].map((star) => (
+              <span key={star} className={star <= rating ? "is-active" : ""}>
+                ★
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
     </li>
   );

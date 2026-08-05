@@ -6,7 +6,7 @@ export async function getRelease(releaseId) {
     {
       headers: {
         Authorization: `Discogs token=${TOKEN}`,
-        "User-Agent": "TheMemoryBox/1.0",
+        "User-Agent": "MusicAndMemories/1.0",
       },
     }
   );
@@ -27,6 +27,10 @@ export async function getRelease(releaseId) {
     label:
       data.labels && data.labels.length > 0
         ? data.labels[0].name
+        : "",
+    genres:
+      data.genres && data.genres.length > 0
+        ? data.genres.join(", ")
         : "",
   };
 }
