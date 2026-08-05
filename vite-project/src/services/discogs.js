@@ -15,5 +15,18 @@ export async function getRelease(releaseId) {
     throw new Error(`Discogs API error: ${response.status}`);
   }
 
-  return response.json();
+  const data = await response.json();
+
+  return {
+    title: data.title,
+    year: data.year,
+    thumb:
+      data.images && data.images.length > 0
+        ? data.images[0].uri
+        : null,
+    label:
+      data.labels && data.labels.length > 0
+        ? data.labels[0].name
+        : "",
+  };
 }

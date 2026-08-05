@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import Papa from "papaparse";
 import { getRelease } from "./services/discogs";
-
+import AlbumCard from "./components/AlbumCard";
 function App() {
   const [records, setRecords] = useState([]);
   const [search, setSearch] = useState("");
@@ -104,97 +104,16 @@ function App() {
         {filteredRecords.length} of {records.length} Records
       </h2>
 
-      <ul style={{ listStyle: "none", padding: 0 }}>
-        {filteredRecords.map((record, index) => (
-          <li
-            key={index}
-            style={{
-              background: "rgba(255,255,255,0.08)",
-              backdropFilter: "blur(12px)",
-              border: "1px solid rgba(255,255,255,0.15)",
-              borderRadius: "18px",
-              padding: "18px",
-              marginBottom: "16px",
-              boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
-            }}
-          >
-            <div
-  style={{
-    display: "flex",
-    gap: "20px",
-    alignItems: "center",
-  }}
->
-  <div
-  style={{
-    width: "90px",
-    height: "90px",
-    flexShrink: 0,
-  }}
->
-  {record.Artist === "Jamie Cullum" && record.Title === "Interlude" ? (
-    <img
-      src="https://i.discogs.com/placeholder.jpg"
-      alt="Jamie Cullum - Interlude"
-      style={{
-        width: "90px",
-        height: "90px",
-        objectFit: "cover",
-        borderRadius: "12px",
-      }}
+    
+     <ul style={{ listStyle: "none", padding: 0 }}>
+  {filteredRecords.map((record, index) => (
+    <AlbumCard
+      key={index}
+      record={record}
     />
-  ) : (
-    <div
-      style={{
-        width: "90px",
-        height: "90px",
-        background: "#222",
-        borderRadius: "12px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: "36px",
-      }}
-    >
-      💿
-    </div>
-  )}
-</div>
-
-  <div>
-    <h3
-      style={{
-        margin: 0,
-        fontSize: "22px",
-      }}
-    >
-      {record.Artist}
-    </h3>
-
-    <p
-      style={{
-        margin: "6px 0",
-        color: "#ddd",
-        fontSize: "18px",
-      }}
-    >
-      {record.Title}
-    </p>
-
-    <p
-      style={{
-        color: "#888",
-        margin: 0,
-        fontSize: "14px",
-      }}
-    >
-      Click for artwork & details
-    </p>
-  </div>
-</div>
-          </li>
-        ))}
-      </ul>
+  ))}
+</ul>
+      
     </div>
   );
 }
