@@ -83,7 +83,7 @@ function createArtworkManager() {
     const request = fetchRelease(releaseId)
       .then((releaseData) => {
         const entry = buildFinalEntry(releaseData);
-        releaseCache.set(releaseId, {
+          releaseCache.set(releaseId, {
           status: "ready",
           entry,
         });
