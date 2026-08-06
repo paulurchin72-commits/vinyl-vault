@@ -10,6 +10,44 @@ import ArtistsDirectoryView from "./components/ArtistsDirectoryView";
 import PlaceholderPage from "./components/PlaceholderPage";
 import "./App.css";
 
+function getTraceStore() {
+  if (typeof globalThis === "undefined") {
+    return null;
+  }
+
+  return globalThis;
+}
+
+function logTraceStage(stage, payload, options = {}) {
+  const traceStore = getTraceStore();
+  if (!traceStore) {
+    return;
+  }
+
+  const traceAlbum = traceStore.__MM_TRACE_FIRST_ALBUM__;
+  if (!traceAlbum) {
+    return;
+  }
+
+  if (options.once) {
+    traceStore.__MM_TRACE_ONCE__ ||= {};
+    const onceKey = `${stage}:${traceAlbum.albumKey}`;
+    if (traceStore.__MM_TRACE_ONCE__[onceKey]) {
+      return;
+    }
+    traceStore.__MM_TRACE_ONCE__[onceKey] = true;
+  }
+
+  console.log(`[MM TRACE] ${stage}`, payload);
+}
+
+function isTracedAlbumKey(traceStore, albumKey) {
+  return (
+    traceStore?.__MM_TRACE_FIRST_ALBUM__?.albumKey === albumKey ||
+    traceStore?.__MM_TRACE_SUCCESS_ALBUM__?.albumKey === albumKey
+  );
+}
+
 const SAVED_MEMORIES_KEY = "the-memory-box:saved-memories";
 const RECENTLY_VIEWED_KEY = "the-memory-box:recently-viewed";
 const RECENTLY_VIEWED_LIMIT = 10;
@@ -135,11 +173,26 @@ function App() {
   }
 
   function getArtworkEntry(record) {
-    return artworkEntries[getAlbumKey(record)] || {
+    const albumKey = getAlbumKey(record);
+    const entry = artworkEntries[albumKey] || {
       status: "idle",
       coverUrl: null,
       releaseData: null,
     };
+
+    const traceStore = getTraceStore();
+    if (isTracedAlbumKey(traceStore, albumKey)) {
+      const snapshotKey = `${entry.status}|${entry.coverUrl || ""}`;
+      if (traceStore.__MM_TRACE_LAST_GET_ARTWORK_ENTRY__ !== snapshotKey) {
+        traceStore.__MM_TRACE_LAST_GET_ARTWORK_ENTRY__ = snapshotKey;
+        logTraceStage("5.getArtworkEntry()", {
+          albumKey,
+          entry,
+        });
+      }
+    }
+
+    return entry;
   }
 
   function mergeAlbumWithArtwork(record, savedAlbum, artworkEntry) {
@@ -676,6 +729,17 @@ function App() {
   }, [surpriseSelection]);
 
   useEffect(() => {
+    const traceStore = getTraceStore();
+    if (traceStore && !traceStore.__MM_TRACE_FIRST_ALBUM__ && filteredRecords.length) {
+      const firstQueuedRecord = filteredRecords[0];
+      traceStore.__MM_TRACE_FIRST_ALBUM__ = {
+        albumKey: getAlbumKey(firstQueuedRecord),
+        release_id: firstQueuedRecord.release_id || null,
+      };
+
+      console.log("[MM TRACE] 1.albumKey / 2.release_id", traceStore.__MM_TRACE_FIRST_ALBUM__);
+    }
+
     artworkManager.queueArtwork(filteredRecords.slice(0, 48), getRelease, "priority");
   }, [filteredRecords]);
 
@@ -914,7 +978,7 @@ function App() {
     );
   }
 
-  function CollectionPage() {
+  function renderCollectionPage() {
     return (
       <>
         <div className="app-toolbar app-toolbar--search">
@@ -1085,7 +1149,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Navigate to="/home" replace />} />
             <Route path="/home" element={<HomePage />} />
-            <Route path="/collection" element={<CollectionPage />} />
+            <Route path="/collection" element={renderCollectionPage()} />
             <Route path="/artists" element={<ArtistsRoute />} />
             <Route path="/artists/:artistName" element={<ArtistsRoute />} />
             <Route path="/favourites" element={<FavouritesPage />} />

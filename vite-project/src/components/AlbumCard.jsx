@@ -21,6 +21,22 @@ function AlbumCard({
     onArtistClick(record.Artist);
   }
 
+  const albumKey = record.albumKey || record.release_id || `${record.Artist}-${record.Title}-${record.Released}`;
+  const traceStore = typeof globalThis !== "undefined" ? globalThis : null;
+  const isTracedAlbum =
+    traceStore?.__MM_TRACE_FIRST_ALBUM__?.albumKey === albumKey ||
+    traceStore?.__MM_TRACE_SUCCESS_ALBUM__?.albumKey === albumKey;
+
+  if (isTracedAlbum) {
+    if (traceStore.__MM_TRACE_LAST_ALBUM_CARD_COVER__ !== cover) {
+      traceStore.__MM_TRACE_LAST_ALBUM_CARD_COVER__ = cover;
+      console.log("[MM TRACE] 6.AlbumCard cover", {
+        albumKey,
+        cover,
+      });
+    }
+  }
+
   return (
     <li
       id={id}

@@ -1,5 +1,13 @@
 const TOKEN = import.meta.env.VITE_DISCOGS_TOKEN;
 
+function getTraceStore() {
+  if (typeof globalThis === "undefined") {
+    return null;
+  }
+
+  return globalThis;
+}
+
 export async function getRelease(releaseId) {
   const response = await fetch(
     `https://api.discogs.com/releases/${releaseId}`,
@@ -17,13 +25,24 @@ export async function getRelease(releaseId) {
 
   const data = await response.json();
 
+  const thumb =
+    data.images && data.images.length > 0
+      ? data.images[0].uri
+      : null;
+
+  const traceStore = getTraceStore();
+  if (traceStore?.__MM_TRACE_FIRST_ALBUM__?.release_id && String(traceStore.__MM_TRACE_FIRST_ALBUM__.release_id) === String(releaseId)) {
+    console.log("[MM TRACE] 3.getRelease().thumb", {
+      releaseId,
+      hasImages: Boolean(data.images && data.images.length > 0),
+      thumb,
+    });
+  }
+
   return {
     title: data.title,
     year: data.year,
-    thumb:
-      data.images && data.images.length > 0
-        ? data.images[0].uri
-        : null,
+    thumb,
     label:
       data.labels && data.labels.length > 0
         ? data.labels[0].name

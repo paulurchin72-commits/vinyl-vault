@@ -9,6 +9,30 @@ function createArtworkStorageAdapter() {
   };
 }
 
+function getTraceStore() {
+  if (typeof globalThis === "undefined") {
+    return null;
+  }
+
+  return globalThis;
+}
+
+function logTrace(stage, payload) {
+  const traceStore = getTraceStore();
+  if (!traceStore?.__MM_TRACE_FIRST_ALBUM__) {
+    return;
+  }
+
+  console.log(`[MM TRACE] ${stage}`, payload);
+}
+
+function isTracedAlbumKey(traceStore, albumKey) {
+  return (
+    traceStore?.__MM_TRACE_FIRST_ALBUM__?.albumKey === albumKey ||
+    traceStore?.__MM_TRACE_SUCCESS_ALBUM__?.albumKey === albumKey
+  );
+}
+
 function createArtworkManager(storage = createArtworkStorageAdapter()) {
   const cache = new Map(Object.entries(storage.loadSnapshot()));
   const inflightRequests = new Map();
@@ -33,10 +57,43 @@ function createArtworkManager(storage = createArtworkStorageAdapter()) {
   }
 
   function getEntry(albumKey) {
-    return cache.get(albumKey) || createDefaultEntry();
+    const entry = cache.get(albumKey) || createDefaultEntry();
+    const traceStore = getTraceStore();
+
+    if (isTracedAlbumKey(traceStore, albumKey)) {
+      const snapshotKey = `${entry.status}|${entry.coverUrl || ""}`;
+      traceStore.__MM_TRACE_LAST_GET_ENTRY__ ||= {};
+
+      if (traceStore.__MM_TRACE_LAST_GET_ENTRY__[albumKey] !== snapshotKey) {
+        traceStore.__MM_TRACE_LAST_GET_ENTRY__[albumKey] = snapshotKey;
+        logTrace("4b.getEntry()", {
+          albumKey,
+          entry,
+        });
+      }
+    }
+
+    return entry;
   }
 
   function setEntry(albumKey, nextEntry) {
+    const traceStore = getTraceStore();
+    if (traceStore && !traceStore.__MM_TRACE_SUCCESS_ALBUM__ && nextEntry.status === "loaded" && nextEntry.coverUrl) {
+      traceStore.__MM_TRACE_SUCCESS_ALBUM__ = {
+        albumKey,
+        coverUrl: nextEntry.coverUrl,
+      };
+
+      logTrace("4a.traceTargetSelected", traceStore.__MM_TRACE_SUCCESS_ALBUM__);
+    }
+
+    if (isTracedAlbumKey(traceStore, albumKey)) {
+      logTrace("4.setEntry()", {
+        albumKey,
+        nextEntry,
+      });
+    }
+
     cache.set(albumKey, nextEntry);
     storage.saveEntry(albumKey, nextEntry);
     notify();
