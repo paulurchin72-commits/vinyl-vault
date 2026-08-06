@@ -8,6 +8,7 @@ function ArtistCollectionView({
   getAlbumKey,
   getRecordListKey,
   getArtworkEntry,
+  onAlbumVisible,
   onAlbumOpen,
   onBack,
   onArtistClick,
@@ -118,6 +119,7 @@ function ArtistCollectionView({
               record={record}
               onClick={onAlbumOpen}
               onArtistClick={onArtistClick}
+              onVisible={onAlbumVisible}
               favorite={savedDetails.favorite}
               rating={savedDetails.rating}
               cover={getArtworkEntry(record).coverUrl}

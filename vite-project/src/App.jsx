@@ -141,8 +141,6 @@ function App() {
     });
   }, []);
 
-  useEffect(() => artworkManager.subscribe(setArtworkEntries), []);
-
   useEffect(() => {
   }, [records]);
 
@@ -193,6 +191,78 @@ function App() {
     }
 
     return entry;
+  }
+
+  function refreshArtworkEntries() {
+    setArtworkEntries(artworkManager.getSnapshot());
+  }
+
+  function updateRecentlyViewedArtwork(albumKey, coverUrl) {
+    if (!coverUrl) {
+      return;
+    }
+
+    setRecentlyViewed((currentAlbums) => {
+      let hasChanged = false;
+
+      const nextAlbums = currentAlbums.map((entry) => {
+        if (entry.albumKey !== albumKey || entry.artwork === coverUrl) {
+          return entry;
+        }
+
+        hasChanged = true;
+        return {
+          ...entry,
+          artwork: coverUrl,
+        };
+      });
+
+      if (!hasChanged) {
+        return currentAlbums;
+      }
+
+      try {
+        localStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify(nextAlbums));
+      } catch {
+        // Ignore storage failures and keep the in-memory state update.
+      }
+
+      return nextAlbums;
+    });
+  }
+
+  function handleAlbumCardVisible(record) {
+    const albumKey = getAlbumKey(record);
+    const albumWithKey = {
+      ...record,
+      albumKey,
+    };
+
+    const currentEntry = artworkManager.getEntry(albumKey);
+    if (currentEntry.status === "loaded" || currentEntry.status === "missing") {
+      return;
+    }
+
+    const request = artworkManager.ensureAlbumArtwork(albumWithKey, getRelease);
+    refreshArtworkEntries();
+
+    Promise.resolve(request).then((nextArtworkEntry) => {
+      refreshArtworkEntries();
+      updateRecentlyViewedArtwork(albumKey, nextArtworkEntry.coverUrl);
+
+      setSelectedAlbum((currentAlbum) => {
+        if (!currentAlbum || currentAlbum.albumKey !== albumKey) {
+          return currentAlbum;
+        }
+
+        const savedDetails = savedAlbumDetails[albumKey] || {};
+        return {
+          ...currentAlbum,
+          ...mergeAlbumWithArtwork(record, savedDetails, nextArtworkEntry),
+          albumKey,
+        };
+      });
+    });
   }
 
   function mergeAlbumWithArtwork(record, savedAlbum, artworkEntry) {
@@ -549,49 +619,6 @@ function App() {
 
       return nextAlbums;
     });
-
-    if (!record.release_id) {
-      return;
-    }
-
-    try {
-      const nextArtworkEntry = await artworkManager.ensureAlbumArtwork({ ...record, albumKey }, getRelease);
-
-      if (nextArtworkEntry.coverUrl) {
-        setRecentlyViewed((currentAlbums) => {
-          const nextAlbums = currentAlbums.map((entry) =>
-            entry.albumKey === albumKey
-              ? {
-                  ...entry,
-                  artwork: nextArtworkEntry.coverUrl,
-                }
-              : entry
-          );
-
-          try {
-            localStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify(nextAlbums));
-          } catch {
-            // Ignore storage failures and keep the in-memory state update.
-          }
-
-          return nextAlbums;
-        });
-      }
-
-      setSelectedAlbum((currentAlbum) => {
-        if (!currentAlbum || currentAlbum.albumKey !== albumKey) {
-          return currentAlbum;
-        }
-
-        return {
-          ...currentAlbum,
-          ...mergeAlbumWithArtwork(record, savedDetails, nextArtworkEntry),
-          albumKey,
-        };
-      });
-    } catch {
-      // Keep the modal open with CSV data if Discogs enrichment fails.
-    }
   }
 
   async function openRecentlyViewedAlbum(recentEntry) {
@@ -739,8 +766,6 @@ function App() {
 
       console.log("[MM TRACE] 1.albumKey / 2.release_id", traceStore.__MM_TRACE_FIRST_ALBUM__);
     }
-
-    artworkManager.queueArtwork(filteredRecords.slice(0, 48), getRelease, "priority");
   }, [filteredRecords]);
 
   function renderAlbumGrid(recordList, hintText, highlightBySurprise = false) {
@@ -766,6 +791,7 @@ function App() {
                 record={record}
                 onClick={openAlbum}
                 onArtistClick={openArtistView}
+                onVisible={handleAlbumCardVisible}
                 id={getAlbumCardId(albumKey)}
                 highlighted={highlightBySurprise && surpriseSelection?.albumKey === albumKey}
                 favorite={savedDetails.favorite}
@@ -1108,6 +1134,7 @@ function App() {
           getAlbumKey={getAlbumKey}
           getRecordListKey={getRecordListKey}
           getArtworkEntry={getArtworkEntry}
+          onAlbumVisible={handleAlbumCardVisible}
           onAlbumOpen={openAlbum}
           onBack={closeArtistView}
           onArtistClick={openArtistView}

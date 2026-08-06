@@ -1,14 +1,20 @@
+import { useEffect, useRef } from "react";
+
 function AlbumCard({
   record,
   cover,
   onClick = () => {},
   onArtistClick = () => {},
+  onVisible = () => {},
   id,
   highlighted = false,
   favorite = false,
   rating = 0,
   artworkStatus = "idle",
 }) {
+  const cardRef = useRef(null);
+  const hasTriggeredVisibility = useRef(false);
+
   function handleKeyDown(event) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -27,6 +33,48 @@ function AlbumCard({
     traceStore?.__MM_TRACE_FIRST_ALBUM__?.albumKey === albumKey ||
     traceStore?.__MM_TRACE_SUCCESS_ALBUM__?.albumKey === albumKey;
 
+  useEffect(() => {
+    hasTriggeredVisibility.current = false;
+  }, [albumKey]);
+
+  useEffect(() => {
+    const node = cardRef.current;
+
+    if (!node || hasTriggeredVisibility.current) {
+      return undefined;
+    }
+
+    if (typeof IntersectionObserver === "undefined") {
+      hasTriggeredVisibility.current = true;
+      onVisible(record);
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const firstEntry = entries[0];
+
+        if (!firstEntry?.isIntersecting || hasTriggeredVisibility.current) {
+          return;
+        }
+
+        hasTriggeredVisibility.current = true;
+        onVisible(record);
+        observer.disconnect();
+      },
+      {
+        rootMargin: "160px 0px",
+        threshold: 0.01,
+      }
+    );
+
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [onVisible, record]);
+
   if (isTracedAlbum) {
     if (traceStore.__MM_TRACE_LAST_ALBUM_CARD_COVER__ !== cover) {
       traceStore.__MM_TRACE_LAST_ALBUM_CARD_COVER__ = cover;
@@ -39,6 +87,7 @@ function AlbumCard({
 
   return (
     <li
+      ref={cardRef}
       id={id}
       onClick={() => onClick(record)}
       onKeyDown={handleKeyDown}
