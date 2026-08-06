@@ -106,7 +106,6 @@ function App() {
   useEffect(() => artworkManager.subscribe(setArtworkEntries), []);
 
   useEffect(() => {
-    artworkManager.queueArtwork(records, getRelease);
   }, [records]);
 
   function getAlbumKey(album) {
