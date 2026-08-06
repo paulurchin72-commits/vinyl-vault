@@ -177,6 +177,7 @@
 .glass-card,
 .album-card,
 .collection-search,
+.collection-sort,
 .collection-button,
 .surprise-button {
   backdrop-filter: blur(18px);
@@ -352,6 +353,30 @@
 
 .collection-search:hover,
 .collection-search:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(245, 197, 66, 0.34);
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.28);
+  outline: none;
+}
+
+.collection-sort {
+  flex: 0 1 240px;
+  min-height: 58px;
+  padding: 0 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04)),
+    rgba(12, 12, 12, 0.82);
+  color: #fff9f0;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background-color 180ms ease;
+}
+
+.collection-sort:hover,
+.collection-sort:focus-visible {
   transform: translateY(-1px);
   border-color: rgba(245, 197, 66, 0.34);
   box-shadow: 0 16px 30px rgba(0, 0, 0, 0.28);
@@ -1326,6 +1351,7 @@
   }
 
   .collection-search,
+  .collection-sort,
   .collection-button,
   .surprise-button,
   .insights-button {

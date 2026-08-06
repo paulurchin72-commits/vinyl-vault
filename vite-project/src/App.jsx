@@ -81,6 +81,7 @@ function App() {
   const [savedAlbumDetails, setSavedAlbumDetails] = useState(() => loadSavedMemories());
   const [surpriseSelection, setSurpriseSelection] = useState(null);
   const [activeFilter, setActiveFilter] = useState("all");
+  const [collectionSort, setCollectionSort] = useState("artist-asc");
   const [recentlyViewed, setRecentlyViewed] = useState(() => loadRecentlyViewed());
   const [artworkEntries, setArtworkEntries] = useState(() => artworkManager.getSnapshot());
   const recentlyViewedAlbumKeys = recentlyViewed.map((entry) => entry.albumKey);
@@ -219,6 +220,37 @@ function App() {
   const filteredRecords = searchMatchedRecords.filter((record) =>
     recordMatchesFilter(record, activeFilter)
   );
+
+  const sortedCollectionRecords = useMemo(() => {
+    const sortedRecords = [...filteredRecords];
+
+    sortedRecords.sort((firstRecord, secondRecord) => {
+      const firstArtist = firstRecord.Artist || "Unknown Artist";
+      const secondArtist = secondRecord.Artist || "Unknown Artist";
+      const firstTitle = firstRecord.Title || "Unknown Album";
+      const secondTitle = secondRecord.Title || "Unknown Album";
+      const firstYear = Number(firstRecord.Released) || 0;
+      const secondYear = Number(secondRecord.Released) || 0;
+
+      switch (collectionSort) {
+        case "artist-desc":
+          return secondArtist.localeCompare(firstArtist) || secondTitle.localeCompare(firstTitle);
+        case "album-asc":
+          return firstTitle.localeCompare(secondTitle) || firstArtist.localeCompare(secondArtist);
+        case "album-desc":
+          return secondTitle.localeCompare(firstTitle) || secondArtist.localeCompare(firstArtist);
+        case "year-newest":
+          return secondYear - firstYear || firstArtist.localeCompare(secondArtist) || firstTitle.localeCompare(secondTitle);
+        case "year-oldest":
+          return firstYear - secondYear || firstArtist.localeCompare(secondArtist) || firstTitle.localeCompare(secondTitle);
+        case "artist-asc":
+        default:
+          return firstArtist.localeCompare(secondArtist) || firstTitle.localeCompare(secondTitle);
+      }
+    });
+
+    return sortedRecords;
+  }, [filteredRecords, collectionSort]);
 
   const filterCounts = quickFilters.reduce((counts, filter) => {
     counts[filter.id] = searchMatchedRecords.filter((record) =>
@@ -898,6 +930,20 @@ function App() {
           <button onClick={testDiscogs} className="collection-button">
             Test Discogs
           </button>
+
+          <select
+            value={collectionSort}
+            onChange={(event) => setCollectionSort(event.target.value)}
+            className="collection-sort"
+            aria-label="Sort collection"
+          >
+            <option value="artist-asc">Artist (A–Z)</option>
+            <option value="artist-desc">Artist (Z–A)</option>
+            <option value="album-asc">Album (A–Z)</option>
+            <option value="album-desc">Album (Z–A)</option>
+            <option value="year-newest">Year (Newest)</option>
+            <option value="year-oldest">Year (Oldest)</option>
+          </select>
         </div>
 
         <div className="filter-bar" role="toolbar" aria-label="Quick collection filters">
@@ -915,7 +961,7 @@ function App() {
         </div>
 
         {message && <p className="status-message">{message}</p>}
-        {renderAlbumGrid(filteredRecords, "Premium dark glass collection view", true)}
+        {renderAlbumGrid(sortedCollectionRecords, "Premium dark glass collection view", true)}
       </>
     );
   }
