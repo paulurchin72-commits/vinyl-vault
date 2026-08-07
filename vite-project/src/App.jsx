@@ -883,46 +883,109 @@ function App() {
 
   function HomePage() {
     const todayArtwork = todayAlbum ? getArtworkEntry(todayAlbum).coverUrl : null;
+    const crateSpotlightRecords = records.slice(0, 4);
 
     return (
       <>
-        <section className="glass-panel home-welcome">
-          <div className="section-heading">
-            <p className="section-heading__eyebrow">Welcome</p>
-            <h2 className="section-heading__title">Your Music &amp; Memories Home</h2>
+        <section className="glass-panel home-crate-hero">
+          <div className="home-crate-hero__copy">
+            <p className="home-crate-hero__kicker">Curated Vinyl Home</p>
+            <h2 className="home-crate-hero__title">Open the crate and rediscover your memories.</h2>
+            <p className="home-crate-hero__text">
+              Built like a premium listening room, your collection begins with a handcrafted crate of records waiting to be replayed.
+              Dive into today&apos;s pick or spin the deck for a surprise.
+            </p>
+            <div className="home-crate-hero__actions">
+              <button
+                type="button"
+                className="collection-button"
+                onClick={() => {
+                  if (todayAlbum) {
+                    openAlbum(todayAlbum);
+                  }
+                }}
+                disabled={!todayAlbum}
+              >
+                Open Today&apos;s Record
+              </button>
+
+              <button type="button" onClick={surpriseMe} className="surprise-button">
+                Surprise Me
+              </button>
+            </div>
           </div>
-          <p className="home-welcome__copy">
-            Explore your collection stories, rediscover records you played recently, and uncover a fresh album each day.
-          </p>
+
+          <div className="crate-stage" aria-label="Wooden record crate showcase">
+            <div className="crate-shadow" />
+            <div className="crate-box">
+              <div className="crate-rim" />
+
+              <div className="crate-slats" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+                <span />
+              </div>
+
+              <div className="crate-records">
+                {crateSpotlightRecords[2] ? (
+                  <article className="crate-record crate-record--back crate-record--left" aria-hidden="true">
+                    <p className="crate-record__artist">{crateSpotlightRecords[2].Artist}</p>
+                    <p className="crate-record__title">{crateSpotlightRecords[2].Title}</p>
+                  </article>
+                ) : null}
+
+                {crateSpotlightRecords[1] ? (
+                  <article className="crate-record crate-record--back crate-record--right" aria-hidden="true">
+                    <p className="crate-record__artist">{crateSpotlightRecords[1].Artist}</p>
+                    <p className="crate-record__title">{crateSpotlightRecords[1].Title}</p>
+                  </article>
+                ) : null}
+
+                <button
+                  type="button"
+                  className="crate-record crate-record--front"
+                  onClick={() => {
+                    if (todayAlbum) {
+                      openAlbum(todayAlbum);
+                    }
+                  }}
+                  disabled={!todayAlbum}
+                >
+                  <div className="crate-record__cover">
+                    {todayArtwork ? (
+                      <img src={todayArtwork} alt={todayAlbum?.Title || "Today album artwork"} className="crate-record__image" />
+                    ) : (
+                      <div className="artwork-state artwork-state--placeholder" aria-label="No artwork available">
+                        <span className="artwork-state__monogram">M&amp;M</span>
+                        <span className="artwork-state__label">Music &amp; Memories</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="crate-record__meta">
+                    <p className="crate-record__artist">{todayAlbum?.Artist || "Loading artist"}</p>
+                    <p className="crate-record__title">{todayAlbum?.Title || "Loading album"}</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
         </section>
 
-        <section className="home-feature-grid">
-          <article className="glass-panel today-album-card">
+        <section className="home-support-grid">
+          <article className="glass-panel home-note-card">
             <div className="section-heading">
               <p className="section-heading__eyebrow">Today&apos;s Album</p>
-              <h2 className="section-heading__title">A daily vinyl pick</h2>
+              <h2 className="section-heading__title">Your featured daily spin</h2>
             </div>
 
             {todayAlbum ? (
-              <div className="today-album-card__content">
-                <div className="today-album-card__art">
-                  {todayArtwork ? (
-                    <img src={todayArtwork} alt={todayAlbum.Title} className="today-album-card__image" />
-                  ) : (
-                    <div className="artwork-state artwork-state--placeholder" aria-label="No artwork available">
-                      <span className="artwork-state__monogram">M&amp;M</span>
-                      <span className="artwork-state__label">Music &amp; Memories</span>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <p className="today-album-card__artist">{todayAlbum.Artist}</p>
-                  <p className="today-album-card__title">{todayAlbum.Title}</p>
-                  <button type="button" className="collection-button" onClick={() => openAlbum(todayAlbum)}>
-                    Open Album
-                  </button>
-                </div>
+              <div className="home-note-card__content">
+                <p className="home-note-card__artist">{todayAlbum.Artist}</p>
+                <p className="home-note-card__title">{todayAlbum.Title}</p>
+                <button type="button" className="collection-button" onClick={() => openAlbum(todayAlbum)}>
+                  Open Album
+                </button>
               </div>
             ) : (
               <p className="empty-state">Loading daily album...</p>
@@ -931,20 +994,20 @@ function App() {
 
           <article className="glass-panel surprise-panel">
             <div className="section-heading">
-              <p className="section-heading__eyebrow">Today&apos;s Surprise</p>
+              <p className="section-heading__eyebrow">Deck Shuffle</p>
               <h2 className="section-heading__title">Spin something unexpected</h2>
             </div>
-            <p className="surprise-panel__copy">Pick a random album instantly and jump into its full details popup.</p>
+            <p className="surprise-panel__copy">One tap picks a random record and opens its full story instantly.</p>
             <button onClick={surpriseMe} className="surprise-button surprise-button--wide">
-              🎲 Surprise Me
+              Surprise Me
             </button>
           </article>
         </section>
 
         <section className="dashboard-stack">
           <div className="section-heading">
-            <p className="section-heading__eyebrow">Dashboard</p>
-            <h2 className="section-heading__title">Collection overview</h2>
+            <p className="section-heading__eyebrow">Collection at a Glance</p>
+            <h2 className="section-heading__title">Your vault, elegantly summarized</h2>
           </div>
 
           <section className="stats-grid">
