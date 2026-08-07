@@ -91,16 +91,13 @@ function createArtworkManager() {
       })
       .catch((error) => {
         const entry = {
-          status: "missing",
+          status: "idle",
           coverUrl: null,
           releaseData: null,
           error: error instanceof Error ? error.message : "Artwork unavailable",
         };
 
-        releaseCache.set(releaseId, {
-          status: "ready",
-          entry,
-        });
+        releaseCache.delete(releaseId);
 
         return setAlbumEntry(albumKey, entry);
       });

@@ -885,63 +885,37 @@ function App() {
   function HomePage() {
     const todayArtwork = todayAlbum ? getArtworkEntry(todayAlbum).coverUrl : null;
     const crateSpotlightRecords = records.slice(0, 4);
-    const latestArrivalPlaceholders = [
-      {
-        releaseId: "latest-arrival-001",
-        title: "Neon Echoes",
-        artist: "The Harbor Lights",
-        artwork: "https://images.unsplash.com/photo-1616294143110-4a8b8c9538f6?auto=format&fit=crop&w=900&q=80",
-        dateAdded: "2026-08-05T11:15:00Z",
-      },
-      {
-        releaseId: "latest-arrival-002",
-        title: "Midnight Receiver",
-        artist: "Paper Satellites",
-        artwork: "https://images.unsplash.com/photo-1525362081669-2b476bb628c3?auto=format&fit=crop&w=900&q=80",
-        dateAdded: "2026-08-04T19:20:00Z",
-      },
-      {
-        releaseId: "latest-arrival-003",
-        title: "Gold Dust Avenue",
-        artist: "Avery Cole",
-        artwork: "https://images.unsplash.com/photo-1603048588665-791ca8aea617?auto=format&fit=crop&w=900&q=80",
-        dateAdded: "2026-08-03T14:00:00Z",
-      },
-      {
-        releaseId: "latest-arrival-004",
-        title: "Static Bloom",
-        artist: "Mono Season",
-        artwork: "https://images.unsplash.com/photo-1502773860571-211a597d6e4b?auto=format&fit=crop&w=900&q=80",
-        dateAdded: "2026-08-02T17:40:00Z",
-      },
-      {
-        releaseId: "latest-arrival-005",
-        title: "Cassette Hearts",
-        artist: "June & North",
-        artwork: "https://images.unsplash.com/photo-1461783436728-0a9217714694?auto=format&fit=crop&w=900&q=80",
-        dateAdded: "2026-08-01T09:45:00Z",
-      },
-      {
-        releaseId: "latest-arrival-006",
-        title: "Velvet Frequency",
-        artist: "Sierra Vale",
-        artwork: "https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=900&q=80",
-        dateAdded: "2026-07-31T21:30:00Z",
-      },
-    ];
+    const latestArrivalAlbums = useMemo(() => {
+      return [...records]
+        .map((record, index) => {
+          const albumKey = getAlbumKey(record);
+          const artworkEntry = getArtworkEntry(record);
+          const dateAddedRaw = record["Date Added"] || record.dateAdded || record.DateAdded || "";
+
+          return {
+            releaseId: record.release_id || record.releaseId || albumKey || `record-${index}`,
+            title: record.Title || "Unknown Album",
+            artist: record.Artist || "Unknown Artist",
+            artwork: artworkEntry.coverUrl || record.cover || record.thumb || null,
+            dateAdded: dateAddedRaw,
+            __sortValue: dateAddedRaw ? new Date(dateAddedRaw).getTime() : 0,
+          };
+        })
+        .sort((firstAlbum, secondAlbum) => secondAlbum.__sortValue - firstAlbum.__sortValue)
+        .slice(0, 10)
+        .map(({ __sortValue, ...album }) => album);
+    }, [records, artworkEntries]);
 
     function handleLatestArrivalSelect(album) {
-      const releaseYear = new Date(album.dateAdded).getUTCFullYear();
-
-      openAlbum({
-        albumKey: `latest-${album.releaseId}`,
-        release_id: album.releaseId,
-        Artist: album.artist,
-        Title: album.title,
-        Released: Number.isFinite(releaseYear) ? String(releaseYear) : "Unknown",
-        cover: album.artwork,
-        thumb: album.artwork,
+      const matchingRecord = records.find((record) => {
+        const recordKey = getAlbumKey(record);
+        const recordReleaseId = record.release_id || record.releaseId || recordKey;
+        return String(recordReleaseId) === String(album.releaseId) || recordKey === album.releaseId;
       });
+
+      if (matchingRecord) {
+        openAlbum(matchingRecord);
+      }
     }
 
     return (
@@ -1031,10 +1005,7 @@ function App() {
           </div>
         </section>
 
-        <LatestArrivalsRack
-          albums={latestArrivalPlaceholders}
-          onSelect={handleLatestArrivalSelect}
-        />
+        <LatestArrivalsRack albums={latestArrivalAlbums} onSelect={handleLatestArrivalSelect} />
 
         <section className="home-support-grid">
           <article className="glass-panel home-note-card">

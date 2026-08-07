@@ -1,240 +1,177 @@
 import { getRelease } from "./discogs";
-import { saveArtwork } from "./artworkCache";
-
-let syncState = {
-  isSyncing: false,
-  cancelled: false,
-  total: 0,
-  completed: 0,
-  succeeded: 0,
-  failed: 0,
-  currentReleaseId: null,
-  startedAt: null,
-  finishedAt: null,
-  results: [],
-};
-
-let cancelRequested = false;
-let activeDownloadController = null;
+import { hasArtwork, saveArtwork } from "./artworkCache";
 
 function normalizeReleaseId(releaseId) {
   if (releaseId === null || releaseId === undefined || releaseId === "") {
-    throw new Error("A valid Discogs releaseId is required.");
+    return "";
   }
 
   return String(releaseId);
 }
 
-function ensureNotSyncing() {
-  if (syncState.isSyncing) {
-    throw new Error("Artwork sync is already in progress.");
+function collectUniqueReleaseIds(records) {
+  if (!Array.isArray(records)) {
+    throw new Error("records must be an array.");
   }
+
+  const seen = new Set();
+  const releaseIds = [];
+
+  records.forEach((record) => {
+    const releaseId = normalizeReleaseId(record?.release_id);
+
+    if (!releaseId || seen.has(releaseId)) {
+      return;
+    }
+
+    seen.add(releaseId);
+    releaseIds.push(releaseId);
+  });
+
+  return releaseIds;
 }
 
-function initializeProgress(total) {
-  cancelRequested = false;
-  syncState = {
-    isSyncing: true,
-    cancelled: false,
+async function downloadArtworkBlob(artworkUrl) {
+  const response = await fetch(artworkUrl);
+
+  if (!response.ok) {
+    throw new Error(`Artwork download failed: ${response.status}`);
+  }
+
+  return response.blob();
+}
+
+function createInitialProgress(total) {
+  return {
     total,
     completed: 0,
     succeeded: 0,
     failed: 0,
-    currentReleaseId: null,
+    skippedCached: 0,
+    skippedUnavailable: 0,
     startedAt: Date.now(),
     finishedAt: null,
-    results: [],
-  };
-}
-
-function finalizeProgress() {
-  syncState = {
-    ...syncState,
-    isSyncing: false,
-    cancelled: cancelRequested,
     currentReleaseId: null,
-    finishedAt: Date.now(),
+    results: [],
+    updates: [],
   };
-
-  activeDownloadController = null;
 }
 
-async function downloadArtworkBlob(artworkUrl) {
-  activeDownloadController = new AbortController();
-
-  try {
-    const response = await fetch(artworkUrl, { signal: activeDownloadController.signal });
-
-    if (!response.ok) {
-      throw new Error(`Artwork download failed: ${response.status}`);
-    }
-
-    return await response.blob();
-  } finally {
-    activeDownloadController = null;
-  }
-}
-
-async function runSingleSync(normalizedReleaseId) {
-  if (cancelRequested) {
-    return {
-      releaseId: normalizedReleaseId,
-      success: false,
-      skipped: true,
-      reason: "Sync cancelled.",
-    };
-  }
-
-  const releaseData = await getRelease(normalizedReleaseId);
-
-  if (cancelRequested) {
-    return {
-      releaseId: normalizedReleaseId,
-      success: false,
-      skipped: true,
-      reason: "Sync cancelled.",
-    };
-  }
-
-  if (!releaseData?.thumb) {
-    return {
-      releaseId: normalizedReleaseId,
-      success: false,
-      skipped: true,
-      reason: "No artwork available for this release.",
-    };
-  }
-
-  const blob = await downloadArtworkBlob(releaseData.thumb);
-
-  if (cancelRequested) {
-    return {
-      releaseId: normalizedReleaseId,
-      success: false,
-      skipped: true,
-      reason: "Sync cancelled.",
-    };
-  }
-
-  await saveArtwork(normalizedReleaseId, blob);
+function createUpdate(progress, result) {
+  const percentage = progress.total
+    ? Math.round((progress.completed / progress.total) * 100)
+    : 100;
 
   return {
-    releaseId: normalizedReleaseId,
-    success: true,
-    skipped: false,
+    total: progress.total,
+    completed: progress.completed,
+    succeeded: progress.succeeded,
+    failed: progress.failed,
+    skippedCached: progress.skippedCached,
+    skippedUnavailable: progress.skippedUnavailable,
+    percentage,
+    currentReleaseId: progress.currentReleaseId,
+    result,
+    timestamp: Date.now(),
   };
 }
 
-function collectBatchReleaseIds(releaseIds) {
-  if (!Array.isArray(releaseIds)) {
-    throw new Error("releaseIds must be an array.");
+function appendProgress(progress, result, onProgress) {
+  progress.completed += 1;
+  progress.currentReleaseId = result.releaseId;
+  progress.results.push(result);
+
+  if (result.status === "synced") {
+    progress.succeeded += 1;
+  } else if (result.status === "failed") {
+    progress.failed += 1;
+  } else if (result.status === "cached") {
+    progress.skippedCached += 1;
+  } else {
+    progress.skippedUnavailable += 1;
   }
 
-  const uniqueIds = [];
-  const seen = new Set();
+  const update = createUpdate(progress, result);
+  progress.updates.push(update);
 
-  releaseIds.forEach((releaseId) => {
-    const normalized = normalizeReleaseId(releaseId);
-
-    if (!seen.has(normalized)) {
-      seen.add(normalized);
-      uniqueIds.push(normalized);
-    }
-  });
-
-  return uniqueIds;
-}
-
-async function syncAndTrack(normalizedReleaseId) {
-  syncState = {
-    ...syncState,
-    currentReleaseId: normalizedReleaseId,
-  };
-
-  try {
-    const result = await runSingleSync(normalizedReleaseId);
-    const wasSuccessful = Boolean(result.success);
-
-    syncState = {
-      ...syncState,
-      completed: syncState.completed + 1,
-      succeeded: syncState.succeeded + (wasSuccessful ? 1 : 0),
-      failed: syncState.failed + (wasSuccessful ? 0 : 1),
-      results: [...syncState.results, result],
-    };
-
-    return result;
-  } catch (error) {
-    const result = {
-      releaseId: normalizedReleaseId,
-      success: false,
-      skipped: false,
-      reason: error instanceof Error ? error.message : "Unknown sync error.",
-    };
-
-    syncState = {
-      ...syncState,
-      completed: syncState.completed + 1,
-      failed: syncState.failed + 1,
-      results: [...syncState.results, result],
-    };
-
-    return result;
+  if (typeof onProgress === "function") {
+    onProgress(update);
   }
 }
 
-export async function syncArtwork(releaseId) {
-  ensureNotSyncing();
-  const normalizedReleaseId = normalizeReleaseId(releaseId);
+export async function syncArtworkBatch(records, options = {}) {
+  const onProgress = options?.onProgress;
+  const releaseIds = collectUniqueReleaseIds(records);
+  const progress = createInitialProgress(releaseIds.length);
 
-  initializeProgress(1);
+  for (const releaseId of releaseIds) {
+    try {
+      const cached = await hasArtwork(releaseId);
 
-  try {
-    const result = await syncAndTrack(normalizedReleaseId);
-    return result;
-  } finally {
-    finalizeProgress();
-  }
-}
-
-export async function syncArtworkBatch(releaseIds) {
-  ensureNotSyncing();
-  const normalizedReleaseIds = collectBatchReleaseIds(releaseIds);
-
-  initializeProgress(normalizedReleaseIds.length);
-
-  try {
-    for (const releaseId of normalizedReleaseIds) {
-      if (cancelRequested) {
-        break;
+      if (cached) {
+        appendProgress(
+          progress,
+          {
+            releaseId,
+            status: "cached",
+            success: true,
+            message: "Artwork already cached.",
+          },
+          onProgress
+        );
+        continue;
       }
 
-      await syncAndTrack(releaseId);
+      const releaseData = await getRelease(releaseId);
+
+      if (!releaseData?.thumb) {
+        appendProgress(
+          progress,
+          {
+            releaseId,
+            status: "unavailable",
+            success: false,
+            message: "No artwork available for this release.",
+          },
+          onProgress
+        );
+        continue;
+      }
+
+      const blob = await downloadArtworkBlob(releaseData.thumb);
+      await saveArtwork(releaseId, blob);
+
+      appendProgress(
+        progress,
+        {
+          releaseId,
+          status: "synced",
+          success: true,
+          message: "Artwork downloaded and cached.",
+          thumbUrl: releaseData.thumb,
+        },
+        onProgress
+      );
+    } catch (error) {
+      appendProgress(
+        progress,
+        {
+          releaseId,
+          status: "failed",
+          success: false,
+          message: error instanceof Error ? error.message : "Unknown sync error.",
+        },
+        onProgress
+      );
     }
-
-    return getProgress();
-  } finally {
-    finalizeProgress();
-  }
-}
-
-export function cancelSync() {
-  if (!syncState.isSyncing) {
-    return false;
   }
 
-  cancelRequested = true;
+  progress.currentReleaseId = null;
+  progress.finishedAt = Date.now();
 
-  if (activeDownloadController) {
-    activeDownloadController.abort();
-  }
-
-  return true;
-}
-
-export function getProgress() {
   return {
-    ...syncState,
-    results: [...syncState.results],
+    ...progress,
+    results: [...progress.results],
+    updates: [...progress.updates],
   };
 }
