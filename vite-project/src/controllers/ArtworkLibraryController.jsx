@@ -115,6 +115,7 @@ function ArtworkLibraryController({ records = [], ArtworkLibraryComponent, onSyn
 
   const runSync = useCallback(
     async (releaseIds) => {
+      console.log("[Artwork] runSync start", releaseIds);
       setError("");
       setIsPaused(false);
 
@@ -131,6 +132,7 @@ function ArtworkLibraryController({ records = [], ArtworkLibraryComponent, onSyn
       }
 
       setIsSyncing(true);
+      console.log("[Artwork] setIsSyncing(true)");
       setSyncProgress(
         createProgressSnapshot({
           completed: 0,
@@ -143,8 +145,12 @@ function ArtworkLibraryController({ records = [], ArtworkLibraryComponent, onSyn
       startProgressPolling();
 
       try {
-        await syncArtworkBatch(releaseIds);
+        console.log("[Artwork] before syncArtworkBatch", releaseIds);
+        const recordsToSync = releaseIds.map((releaseId) => ({ release_id: releaseId }));
+        await syncArtworkBatch(recordsToSync);
+        console.log("[Artwork] after syncArtworkBatch");
       } catch (syncError) {
+        console.error("[Artwork] syncArtworkBatch error", syncError);
         setError(syncError instanceof Error ? syncError.message : "Artwork sync failed.");
       } finally {
         stopProgressPolling();
@@ -168,10 +174,12 @@ function ArtworkLibraryController({ records = [], ArtworkLibraryComponent, onSyn
   );
 
   const handleStart = useCallback(() => {
+    console.log("[Artwork] handleStart");
     if (isSyncing) {
       return;
     }
 
+    console.log("[Artwork] before runSync", cacheStatus.missingReleaseIds);
     void runSync(cacheStatus.missingReleaseIds);
   }, [cacheStatus.missingReleaseIds, isSyncing, runSync]);
 
@@ -230,6 +238,7 @@ function ArtworkLibraryController({ records = [], ArtworkLibraryComponent, onSyn
       percentage={syncProgress.percentage}
       failures={syncProgress.failures}
       isSyncing={isSyncing}
+      isRunning={isSyncing}
       isPaused={isPaused}
       canStart={canStart}
       canPause={canPause}

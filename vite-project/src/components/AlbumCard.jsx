@@ -14,6 +14,8 @@ function AlbumCard({
 }) {
   const cardRef = useRef(null);
   const hasTriggeredVisibility = useRef(false);
+  const retryCountRef = useRef(0);
+  const maxRetryAttempts = 2;
 
   function handleKeyDown(event) {
     if (event.key === "Enter" || event.key === " ") {
@@ -35,6 +37,7 @@ function AlbumCard({
 
   useEffect(() => {
     hasTriggeredVisibility.current = false;
+    retryCountRef.current = 0;
   }, [albumKey]);
 
   useEffect(() => {
@@ -75,6 +78,39 @@ function AlbumCard({
     };
   }, [onVisible, record]);
 
+  useEffect(() => {
+    if (cover || artworkStatus !== "idle") {
+      return undefined;
+    }
+
+    if (retryCountRef.current >= maxRetryAttempts) {
+      return undefined;
+    }
+
+    const node = cardRef.current;
+    if (!node) {
+      return undefined;
+    }
+
+    const bounds = node.getBoundingClientRect();
+    const isNearViewport = bounds.bottom >= -200 && bounds.top <= window.innerHeight + 200;
+
+    if (!isNearViewport) {
+      return undefined;
+    }
+
+    const retryDelayMs = 2800 + retryCountRef.current * 1200;
+    const retryTimerId = window.setTimeout(() => {
+      hasTriggeredVisibility.current = false;
+      retryCountRef.current += 1;
+      onVisible(record);
+    }, retryDelayMs);
+
+    return () => {
+      window.clearTimeout(retryTimerId);
+    };
+  }, [cover, artworkStatus, onVisible, record]);
+
   if (isTracedAlbum) {
     if (traceStore.__MM_TRACE_LAST_ALBUM_CARD_COVER__ !== cover) {
       traceStore.__MM_TRACE_LAST_ALBUM_CARD_COVER__ = cover;
@@ -101,6 +137,8 @@ function AlbumCard({
             src={cover}
             alt={record.Title}
             className="album-card__image"
+            loading="lazy"
+            decoding="async"
           />
         ) : artworkStatus === "loading" ? (
           <div className="artwork-state artwork-state--loading" aria-label="Loading artwork">

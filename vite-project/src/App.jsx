@@ -4,10 +4,20 @@ import Papa from "papaparse";
 import { getRelease } from "./services/discogs";
 import artworkManager from "./services/artworkManager";
 import AlbumCard from "./components/AlbumCard";
+import AddMusicPage from "./components/AddMusicPage";
 import AlbumModal from "./components/AlbumModal";
 import ArtistCollectionView from "./components/ArtistCollectionView";
 import ArtistsDirectoryView from "./components/ArtistsDirectoryView";
-import LatestArrivalsRack from "./components/LatestArrivalsRack";
+import BottomPlayer from "./components/dashboard/BottomPlayer";
+import CollectionStats from "./components/dashboard/CollectionStats";
+import ContinueListening from "./components/dashboard/ContinueListening";
+import DashboardLayout from "./components/dashboard/DashboardLayout";
+import DuplicateDetectorPage from "./components/DuplicateDetectorPage";
+import HeroSection from "./components/dashboard/HeroSection";
+import HomeTrackSearch from "./components/dashboard/HomeTrackSearch";
+import RandomMemory from "./components/dashboard/RandomMemory";
+import RecentlyAdded from "./components/dashboard/RecentlyAdded";
+import TonightsPick from "./components/dashboard/TonightsPick";
 import PlaceholderPage from "./components/PlaceholderPage";
 import mmMonogramLogo from "./assets/mm-monogram-logo.svg";
 import "./App.css";
@@ -52,11 +62,18 @@ function isTracedAlbumKey(traceStore, albumKey) {
 
 const SAVED_MEMORIES_KEY = "the-memory-box:saved-memories";
 const RECENTLY_VIEWED_KEY = "the-memory-box:recently-viewed";
+const ADDED_RECORDS_KEY = "the-memory-box:added-records";
+const CUSTOM_ARTWORK_KEY = "the-memory-box:custom-artwork";
+const ROLLING_STONE_LIST_KEY = "the-memory-box:rolling-stone-top-500";
+const ROLLING_STONE_GIST_API = "https://api.github.com/gists/232302a4ba29fd8f5f0d0352ef55d2b9";
 const RECENTLY_VIEWED_LIMIT = 10;
+const LETTER_FILTERS = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ", "0-9", "ALL"];
 const NAV_ITEMS = [
   { to: "/home", label: "🏠 Home" },
   { to: "/collection", label: "📀 Collection" },
+  { to: "/add-music", label: "➕ Add Music" },
   { to: "/artists", label: "🎤 Artists" },
+  { to: "/duplicates", label: "🧬 Duplicates" },
   { to: "/favourites", label: "❤️ Favourites" },
   { to: "/top-rated", label: "⭐ Top Rated" },
   { to: "/insights", label: "📊 Insights" },
@@ -89,6 +106,7 @@ function loadRecentlyViewed() {
       if (typeof entry === "string") {
         return {
           albumKey: entry,
+          release_id: null,
           artist: "",
           album: "",
           artwork: null,
@@ -102,6 +120,7 @@ function loadRecentlyViewed() {
 
       return {
         albumKey: entry.albumKey,
+        release_id: entry.release_id || entry.releaseId || null,
         artist: entry.artist || "",
         album: entry.album || "",
         artwork: entry.artwork || null,
@@ -112,9 +131,248 @@ function loadRecentlyViewed() {
     .slice(0, RECENTLY_VIEWED_LIMIT);
 }
 
+function loadAddedRecords() {
+  const storedValue = loadStoredJson(ADDED_RECORDS_KEY, []);
+
+  if (!Array.isArray(storedValue)) {
+    return [];
+  }
+
+  return storedValue
+    .filter((record) => record && typeof record === "object" && record.Artist && record.Title)
+    .map((record, index) => ({
+      ...record,
+      __rowIndex: record.__rowIndex ?? `added-${index}`,
+    }));
+}
+
+function loadRollingStoneList() {
+  const storedValue = loadStoredJson(ROLLING_STONE_LIST_KEY, []);
+
+  if (!Array.isArray(storedValue)) {
+    return [];
+  }
+
+  return storedValue
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+
+      const artist = String(entry.artist || entry.Artist || "").trim();
+      const album = String(entry.album || entry.Album || entry.title || entry.Title || "").trim();
+
+      if (!artist || !album) {
+        return null;
+      }
+
+      return {
+        rank: entry.rank || entry.Rank || "",
+        artist,
+        album,
+      };
+    })
+    .filter(Boolean);
+}
+
+function normalizeMatchText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeRollingStoneRows(rows) {
+  return rows
+    .map((entry) => {
+      const artist = String(entry.artist || entry.Artist || "").trim();
+      const album = String(entry.album || entry.Album || entry.title || entry.Title || "").trim();
+
+      if (!artist || !album) {
+        return null;
+      }
+
+      return {
+        rank: entry.rank || entry.Rank || "",
+        artist,
+        album,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 500);
+}
+
+function parseRollingStoneTable(tableElement) {
+  if (!tableElement) {
+    return [];
+  }
+
+  const rows = Array.from(tableElement.querySelectorAll("tr"));
+  const parsedRows = rows
+    .map((row) => {
+      const cells = Array.from(row.querySelectorAll("th, td"));
+      if (cells.length < 3) {
+        return null;
+      }
+
+      const rank = Number.parseInt((cells[0].textContent || "").replace(/[^0-9]/g, ""), 10);
+      if (!Number.isFinite(rank) || rank < 1 || rank > 500) {
+        return null;
+      }
+
+      const album = String(cells[1].textContent || "").replace(/\s+/g, " ").replace(/^"|"$/g, "").trim();
+      const artist = String(cells[2].textContent || "").replace(/\s+/g, " ").trim();
+
+      if (!album || !artist) {
+        return null;
+      }
+
+      return {
+        rank,
+        artist,
+        album,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.rank - b.rank);
+
+  const dedupedByRank = new Map();
+  parsedRows.forEach((entry) => {
+    if (!dedupedByRank.has(entry.rank)) {
+      dedupedByRank.set(entry.rank, entry);
+    }
+  });
+
+  return Array.from(dedupedByRank.values()).sort((a, b) => a.rank - b.rank);
+}
+
+function parseRollingStoneFromWikipediaHtml(htmlText) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(htmlText, "text/html");
+
+  const headingCandidates = [
+    "2020_revision",
+    "2020_list",
+    "2020",
+  ];
+
+  for (const headingId of headingCandidates) {
+    const heading = doc.getElementById(headingId);
+    if (!heading) {
+      continue;
+    }
+
+    const sectionHeading = heading.closest("h2, h3, h4");
+    let probe = sectionHeading?.nextElementSibling || heading.nextElementSibling;
+    while (probe && probe.tagName !== "TABLE") {
+      probe = probe.nextElementSibling;
+    }
+
+    const sectionRows = [];
+    while (probe) {
+      if (/^H[1-4]$/.test(probe.tagName)) {
+        break;
+      }
+
+      if (probe.tagName === "TABLE") {
+        sectionRows.push(...parseRollingStoneTable(probe));
+      }
+
+      probe = probe.nextElementSibling;
+    }
+
+    const dedupedRows = Array.from(
+      sectionRows.reduce((byRank, entry) => {
+        if (!byRank.has(entry.rank)) {
+          byRank.set(entry.rank, entry);
+        }
+        return byRank;
+      }, new Map()).values()
+    ).sort((a, b) => a.rank - b.rank);
+
+    if (dedupedRows.length >= 300) {
+      return dedupedRows;
+    }
+  }
+
+  const allRows = Array.from(doc.querySelectorAll("table.wikitable")).flatMap((table) =>
+    parseRollingStoneTable(table)
+  );
+
+  const dedupedAllRows = Array.from(
+    allRows.reduce((byRank, entry) => {
+      if (!byRank.has(entry.rank)) {
+        byRank.set(entry.rank, entry);
+      }
+      return byRank;
+    }, new Map()).values()
+  ).sort((a, b) => a.rank - b.rank);
+
+  if (dedupedAllRows.length >= 300) {
+    return dedupedAllRows;
+  }
+
+  return [];
+}
+
+function isLikelyTop500List(rows) {
+  if (!rows.length) {
+    return false;
+  }
+
+  const ranks = new Set(rows.map((entry) => Number(entry.rank)).filter((rank) => Number.isFinite(rank)));
+  return rows.length >= 300 && ranks.has(1) && ranks.size >= 250;
+}
+
+async function fetchRollingStoneListFromGist() {
+  const gistResponse = await fetch(ROLLING_STONE_GIST_API);
+  if (!gistResponse.ok) {
+    throw new Error(`Gist lookup failed (${gistResponse.status}).`);
+  }
+
+  const gistData = await gistResponse.json();
+  const files = Object.values(gistData?.files || {});
+  const csvFile = files.find((file) => String(file?.filename || "").toLowerCase().endsWith(".csv"));
+
+  if (!csvFile?.raw_url) {
+    throw new Error("No CSV file found in gist source.");
+  }
+
+  const csvResponse = await fetch(csvFile.raw_url);
+  if (!csvResponse.ok) {
+    throw new Error(`Gist CSV download failed (${csvResponse.status}).`);
+  }
+
+  const csvText = await csvResponse.text();
+  const parsedCsv = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+  const parsedRows = Array.isArray(parsedCsv.data) ? parsedCsv.data : [];
+
+  return normalizeRollingStoneRows(parsedRows);
+}
+
+function normalizeReleaseId(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const normalizedValue = String(value).trim();
+  return normalizedValue || null;
+}
+
+function isTransientArtworkError(errorMessage) {
+  if (!errorMessage) {
+    return false;
+  }
+
+  return /(429|5\d\d|network|failed to fetch|timeout)/i.test(String(errorMessage));
+}
+
 function App() {
   const navigate = useNavigate();
-  const [records, setRecords] = useState([]);
+  const [baseRecords, setBaseRecords] = useState([]);
+  const [addedRecords, setAddedRecords] = useState(() => loadAddedRecords());
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
   const [selectedAlbum, setSelectedAlbum] = useState(null);
@@ -122,16 +380,33 @@ function App() {
   const [surpriseSelection, setSurpriseSelection] = useState(null);
   const [activeFilter, setActiveFilter] = useState("all");
   const [collectionSort, setCollectionSort] = useState("artist-asc");
+  const [collectionView, setCollectionView] = useState("grid");
+  const [collectionLetter, setCollectionLetter] = useState("A");
   const [recentlyViewed, setRecentlyViewed] = useState(() => loadRecentlyViewed());
   const [artworkEntries, setArtworkEntries] = useState(() => artworkManager.getSnapshot());
+  const [customArtworkByAlbumKey, setCustomArtworkByAlbumKey] = useState(() =>
+    loadStoredJson(CUSTOM_ARTWORK_KEY, {})
+  );
+  const [rollingStoneList, setRollingStoneList] = useState(() => loadRollingStoneList());
+  const [rollingStoneStatus, setRollingStoneStatus] = useState("");
+  const records = useMemo(() => [...addedRecords, ...baseRecords], [addedRecords, baseRecords]);
   const recentlyViewedAlbumKeys = recentlyViewed.map((entry) => entry.albumKey);
+
+  useEffect(() => {
+    function handlePopState() {
+      setSelectedAlbum((currentAlbum) => (currentAlbum ? null : currentAlbum));
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   useEffect(() => {
     Papa.parse("/Pault99-collection-20260803-1505.csv", {
       download: true,
       header: true,
       complete: (results) => {
-        setRecords(
+        setBaseRecords(
           results.data
             .filter((record) => record.Artist && record.Title)
             .map((record, rowIndex) => ({
@@ -145,6 +420,50 @@ function App() {
 
   useEffect(() => {
   }, [records]);
+
+  function addRecordToCollection(record) {
+    const normalizedReleaseId = normalizeReleaseId(record.release_id || record.releaseId);
+    const nextRecord = {
+      Artist: record.Artist || record.artist || "Unknown Artist",
+      Title: record.Title || record.title || "Unknown Album",
+      Released: record.Released || record.year || "Unknown",
+      Label: record.Label || record.label || "",
+      Format: record.Format || "Vinyl",
+      Rating: record.Rating || "",
+      release_id: normalizedReleaseId,
+      CollectionFolder: record.CollectionFolder || "1",
+      "Date Added": record["Date Added"] || new Date().toISOString(),
+      cover: record.cover || record.thumb || null,
+      thumb: record.thumb || record.cover || null,
+      genres: record.genres || "",
+      __rowIndex: `added-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    };
+
+    const recordKey = getAlbumKey(nextRecord);
+
+    setAddedRecords((currentRecords) => {
+      const alreadyExists = currentRecords.some((currentRecord) => getAlbumKey(currentRecord) === recordKey)
+        || baseRecords.some((currentRecord) => getAlbumKey(currentRecord) === recordKey);
+
+      if (alreadyExists) {
+        setMessage("Album is already in your collection.");
+        return currentRecords;
+      }
+
+      const nextRecords = [nextRecord, ...currentRecords];
+
+      try {
+        localStorage.setItem(ADDED_RECORDS_KEY, JSON.stringify(nextRecords));
+      } catch {
+        // Ignore storage failures and keep in-memory additions.
+      }
+
+      setMessage(`Added ${nextRecord.Title} by ${nextRecord.Artist} to your collection.`);
+      return nextRecords;
+    });
+
+    navigate("/collection");
+  }
 
   function getAlbumKey(album) {
     return album.albumKey || album.release_id || `${album.Artist}-${album.Title}-${album.Released}`;
@@ -174,6 +493,17 @@ function App() {
 
   function getArtworkEntry(record) {
     const albumKey = getAlbumKey(record);
+    const customArtworkUrl = customArtworkByAlbumKey[albumKey] || null;
+
+    if (customArtworkUrl) {
+      return {
+        status: "loaded",
+        coverUrl: customArtworkUrl,
+        releaseData: null,
+        error: null,
+      };
+    }
+
     const entry = artworkEntries[albumKey] || {
       status: "idle",
       coverUrl: null,
@@ -248,9 +578,19 @@ function App() {
     const request = artworkManager.ensureAlbumArtwork(albumWithKey, getRelease);
     refreshArtworkEntries();
 
-    Promise.resolve(request).then((nextArtworkEntry) => {
+    Promise.resolve(request).then(async (nextArtworkEntry) => {
+      let resolvedArtworkEntry = nextArtworkEntry;
+
+      if (
+        nextArtworkEntry?.status === "idle" &&
+        isTransientArtworkError(nextArtworkEntry?.error)
+      ) {
+        // Retry once for transient API/network failures on first visibility load.
+        resolvedArtworkEntry = await artworkManager.ensureAlbumArtwork(albumWithKey, getRelease);
+      }
+
       refreshArtworkEntries();
-      updateRecentlyViewedArtwork(albumKey, nextArtworkEntry.coverUrl);
+      updateRecentlyViewedArtwork(albumKey, resolvedArtworkEntry.coverUrl);
 
       setSelectedAlbum((currentAlbum) => {
         if (!currentAlbum || currentAlbum.albumKey !== albumKey) {
@@ -260,7 +600,7 @@ function App() {
         const savedDetails = savedAlbumDetails[albumKey] || {};
         return {
           ...currentAlbum,
-          ...mergeAlbumWithArtwork(record, savedDetails, nextArtworkEntry),
+          ...mergeAlbumWithArtwork(record, savedDetails, resolvedArtworkEntry),
           albumKey,
         };
       });
@@ -301,10 +641,30 @@ function App() {
     `${record.Artist} ${record.Title}`.toLowerCase().includes(searchQuery)
   );
 
+  const rollingStoneOwnedAlbumKeySet = useMemo(() => {
+    if (!rollingStoneList.length) {
+      return new Set();
+    }
+
+    const rollingStoneKeySet = new Set(
+      rollingStoneList.map((entry) => `${normalizeMatchText(entry.artist)}|||${normalizeMatchText(entry.album)}`)
+    );
+    const ownedAlbumKeys = new Set();
+
+    records.forEach((record) => {
+      const key = `${normalizeMatchText(record.Artist)}|||${normalizeMatchText(record.Title)}`;
+      if (rollingStoneKeySet.has(key)) {
+        ownedAlbumKeys.add(getAlbumKey(record));
+      }
+    });
+
+    return ownedAlbumKeys;
+  }, [rollingStoneList, records]);
+
   const quickFilters = [
     { id: "all", label: "All Records" },
     { id: "favorites", label: "❤️ Favourites" },
-    { id: "rated5", label: "⭐ Rated 5 Stars" },
+    { id: "rated5", label: "⭐ Top Rated" },
     { id: "memories", label: "📝 Has Memories" },
     { id: "1970s", label: "📅 1970s" },
     { id: "1980s", label: "📅 1980s" },
@@ -322,6 +682,9 @@ function App() {
       case "favorites":
         return Boolean(savedAlbum.favorite);
       case "rated5":
+        if (rollingStoneList.length) {
+          return rollingStoneOwnedAlbumKeySet.has(albumKey);
+        }
         return Number(savedAlbum.rating) === 5;
       case "memories":
         return Boolean(savedAlbum.memory?.trim());
@@ -345,8 +708,41 @@ function App() {
     recordMatchesFilter(record, activeFilter)
   );
 
+  const letterFilteredRecords = useMemo(() => {
+    const hasSearch = Boolean(searchQuery.trim());
+    const isQuickFilterActive = activeFilter !== "all";
+
+    if (hasSearch || isQuickFilterActive || !collectionLetter || collectionLetter === "ALL") {
+      return filteredRecords;
+    }
+
+    return filteredRecords.filter((record) => {
+      const artist = (record.Artist || "").trim();
+      if (!artist) {
+        return false;
+      }
+
+      if (collectionLetter === "0-9") {
+        return /^\d/.test(artist);
+      }
+
+      return artist[0].toUpperCase() === collectionLetter;
+    });
+  }, [filteredRecords, collectionLetter, searchQuery, activeFilter]);
+
+  const activeQuickFilter = quickFilters.find((filter) => filter.id === activeFilter) || quickFilters[0];
+
+  const collectionFilterLabel =
+    activeFilter !== "all"
+      ? `${activeQuickFilter.label} filter`
+      : collectionLetter === "ALL"
+        ? "All artists"
+        : collectionLetter === "0-9"
+          ? "0-9 artists"
+          : `${collectionLetter} artists`;
+
   const sortedCollectionRecords = useMemo(() => {
-    const sortedRecords = [...filteredRecords];
+    const sortedRecords = [...letterFilteredRecords];
 
     sortedRecords.sort((firstRecord, secondRecord) => {
       const firstArtist = firstRecord.Artist || "Unknown Artist";
@@ -374,7 +770,53 @@ function App() {
     });
 
     return sortedRecords;
-  }, [filteredRecords, collectionSort]);
+  }, [letterFilteredRecords, collectionSort]);
+
+  const collectionArtworkProgress = useMemo(() => {
+    return sortedCollectionRecords.reduce(
+      (progress, record) => {
+        const albumKey = getAlbumKey(record);
+        const entry = artworkEntries[albumKey] || {
+          status: "idle",
+          coverUrl: null,
+          error: null,
+        };
+
+        progress.total += 1;
+
+        if (entry.status === "loaded" && entry.coverUrl) {
+          progress.loaded += 1;
+          return progress;
+        }
+
+        if (entry.status === "loading") {
+          progress.loading += 1;
+          return progress;
+        }
+
+        if (entry.status === "missing") {
+          progress.missing += 1;
+          return progress;
+        }
+
+        if (entry.error) {
+          progress.failed += 1;
+          return progress;
+        }
+
+        progress.pending += 1;
+        return progress;
+      },
+      {
+        total: 0,
+        loaded: 0,
+        loading: 0,
+        failed: 0,
+        missing: 0,
+        pending: 0,
+      }
+    );
+  }, [sortedCollectionRecords, artworkEntries]);
 
   const filterCounts = quickFilters.reduce((counts, filter) => {
     counts[filter.id] = searchMatchedRecords.filter((record) =>
@@ -551,15 +993,6 @@ function App() {
       .sort((firstGroup, secondGroup) => firstGroup.artist.localeCompare(secondGroup.artist));
   }, [records, savedAlbumDetails]);
 
-  async function testDiscogs() {
-    try {
-      const album = await getRelease(249504);
-      setMessage(`✅ Connected! Album: ${album.title}`);
-    } catch (error) {
-      setMessage(`❌ ${error.message}`);
-    }
-  }
-
   function openArtistView(artistName) {
     if (!artistName) {
       return;
@@ -594,7 +1027,19 @@ function App() {
     const savedDetails = savedAlbumDetails[albumKey] || {};
     const artworkEntry = getArtworkEntry(record);
     const viewedAt = new Date().toISOString();
-    const initialArtwork = artworkEntry.coverUrl || record.cover || record.thumb || null;
+    const initialArtwork =
+      customArtworkByAlbumKey[albumKey] || artworkEntry.coverUrl || record.cover || record.thumb || null;
+
+    const historyState = window.history.state || {};
+    if (!historyState.__mmAlbumModal) {
+      window.history.pushState(
+        {
+          ...historyState,
+          __mmAlbumModal: true,
+        },
+        ""
+      );
+    }
 
     setSelectedAlbum({
       ...mergeAlbumWithArtwork(record, savedDetails, artworkEntry),
@@ -605,6 +1050,7 @@ function App() {
       const nextAlbums = [
         {
           albumKey,
+          release_id: normalizeReleaseId(record.release_id || record.releaseId),
           artist: record.Artist || "Unknown Artist",
           album: record.Title || "Unknown Album",
           artwork: initialArtwork,
@@ -633,6 +1079,7 @@ function App() {
 
     await openAlbum({
       albumKey: recentEntry.albumKey,
+      release_id: normalizeReleaseId(recentEntry.release_id),
       Artist: recentEntry.artist || "Unknown Artist",
       Title: recentEntry.album || "Unknown Album",
       Released: "Unknown",
@@ -714,7 +1161,129 @@ function App() {
   }
 
   function closeAlbum() {
+    if (window.history.state?.__mmAlbumModal) {
+      window.history.back();
+      return;
+    }
+
     setSelectedAlbum(null);
+  }
+
+  function saveCustomArtwork(album, artworkDataUrl) {
+    if (!album) {
+      return;
+    }
+
+    const albumKey = getAlbumKey(album);
+    if (!albumKey || !artworkDataUrl) {
+      return;
+    }
+
+    setCustomArtworkByAlbumKey((currentEntries) => {
+      const nextEntries = {
+        ...currentEntries,
+        [albumKey]: artworkDataUrl,
+      };
+
+      try {
+        localStorage.setItem(CUSTOM_ARTWORK_KEY, JSON.stringify(nextEntries));
+      } catch {
+        // Ignore storage failures and keep in-memory custom artwork overrides.
+      }
+
+      return nextEntries;
+    });
+
+    setSelectedAlbum((currentAlbum) =>
+      currentAlbum && getAlbumKey(currentAlbum) === albumKey
+        ? {
+            ...currentAlbum,
+            cover: artworkDataUrl,
+            thumb: artworkDataUrl,
+          }
+        : currentAlbum
+    );
+  }
+
+  function clearCustomArtwork(album) {
+    if (!album) {
+      return;
+    }
+
+    const albumKey = getAlbumKey(album);
+    if (!albumKey) {
+      return;
+    }
+
+    setCustomArtworkByAlbumKey((currentEntries) => {
+      if (!currentEntries[albumKey]) {
+        return currentEntries;
+      }
+
+      const nextEntries = { ...currentEntries };
+      delete nextEntries[albumKey];
+
+      try {
+        localStorage.setItem(CUSTOM_ARTWORK_KEY, JSON.stringify(nextEntries));
+      } catch {
+        // Ignore storage failures and keep in-memory custom artwork overrides.
+      }
+
+      return nextEntries;
+    });
+  }
+
+  async function importRollingStoneListOnline() {
+    setRollingStoneStatus("Fetching current Top 500 list...");
+
+    try {
+      const gistList = await fetchRollingStoneListFromGist();
+      if (isLikelyTop500List(gistList)) {
+        setRollingStoneList(gistList);
+        localStorage.setItem(ROLLING_STONE_LIST_KEY, JSON.stringify(gistList));
+        setRollingStoneStatus(`Imported ${gistList.length} entries from online list.`);
+        return;
+      }
+
+      const pageName = "Rolling_Stone's_500_Greatest_Albums_of_All_Time";
+      const endpoint = `https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(pageName)}&prop=text&formatversion=2&format=json&origin=*`;
+      const response = await fetch(endpoint);
+
+      if (!response.ok) {
+        throw new Error(`Online import failed (${response.status}).`);
+      }
+
+      const data = await response.json();
+      const htmlText = data?.parse?.text || "";
+
+      if (!htmlText) {
+        throw new Error("No list content found from online source.");
+      }
+
+      const parsedRows = parseRollingStoneFromWikipediaHtml(htmlText);
+      const normalizedList = normalizeRollingStoneRows(parsedRows);
+
+      if (!isLikelyTop500List(normalizedList)) {
+        throw new Error(
+          `Online source returned only ${normalizedList.length} usable rows. The full list is not publicly exposed on that page for auto-import.`
+        );
+      }
+
+      setRollingStoneList(normalizedList);
+      localStorage.setItem(ROLLING_STONE_LIST_KEY, JSON.stringify(normalizedList));
+      setRollingStoneStatus(`Imported ${normalizedList.length} entries from current online list.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Online import failed.";
+      setRollingStoneStatus(
+        `${message} If you want, I can switch this to import from a specific public data URL you choose.`
+      );
+    }
+  }
+
+  function clearRollingStoneList() {
+    setRollingStoneList([]);
+    localStorage.removeItem(ROLLING_STONE_LIST_KEY);
+    setRollingStoneStatus("Rolling Stone list cleared.");
   }
 
   function handleRecentlyPlayedArtistClick(event, artistName) {
@@ -808,6 +1377,47 @@ function App() {
     );
   }
 
+  function renderAlbumCrate(recordList, hintText, highlightBySurprise = false) {
+    if (!recordList.length) {
+      return <p className="empty-state">No albums match this view yet.</p>;
+    }
+
+    return (
+      <>
+        <div className="results-row">
+          <h2 className="results-row__title">{recordList.length} Records</h2>
+          <p className="results-row__hint">{hintText}</p>
+        </div>
+
+        <div className="collection-crate-shell">
+          <div className="collection-crate-rim" aria-hidden="true" />
+          <ul className="collection-crate" aria-label="Crate view albums">
+            {recordList.map((record) => {
+              const albumKey = getAlbumKey(record);
+              const savedDetails = savedAlbumDetails[albumKey] || {};
+
+              return (
+                <AlbumCard
+                  key={getRecordListKey(record)}
+                  record={record}
+                  onClick={openAlbum}
+                  onArtistClick={openArtistView}
+                  onVisible={handleAlbumCardVisible}
+                  id={getAlbumCardId(albumKey)}
+                  highlighted={highlightBySurprise && surpriseSelection?.albumKey === albumKey}
+                  favorite={savedDetails.favorite}
+                  rating={savedDetails.rating}
+                  cover={getArtworkEntry(record).coverUrl}
+                  artworkStatus={getArtworkEntry(record).status}
+                />
+              );
+            })}
+          </ul>
+        </div>
+      </>
+    );
+  }
+
   function renderRecentlyPlayedSection() {
     return (
       <section className="recently-played-panel glass-panel" aria-label="Recently played albums">
@@ -883,223 +1493,163 @@ function App() {
   }
 
   function HomePage() {
-    const todayArtwork = todayAlbum ? getArtworkEntry(todayAlbum).coverUrl : null;
-    const crateSpotlightRecords = records.slice(0, 4);
     const latestArrivalAlbums = useMemo(() => {
       return [...records]
         .map((record, index) => {
-          const albumKey = getAlbumKey(record);
-          const artworkEntry = getArtworkEntry(record);
           const dateAddedRaw = record["Date Added"] || record.dateAdded || record.DateAdded || "";
+          const albumKey = getAlbumKey(record);
 
           return {
-            releaseId: record.release_id || record.releaseId || albumKey || `record-${index}`,
-            title: record.Title || "Unknown Album",
             artist: record.Artist || "Unknown Artist",
-            artwork: artworkEntry.coverUrl || record.cover || record.thumb || null,
-            dateAdded: dateAddedRaw,
+            title: record.Title || "Unknown Album",
+            year: record.Released || "Unknown",
+            release_id: normalizeReleaseId(record.release_id || record.releaseId),
+            record,
             __sortValue: dateAddedRaw ? new Date(dateAddedRaw).getTime() : 0,
           };
         })
         .sort((firstAlbum, secondAlbum) => secondAlbum.__sortValue - firstAlbum.__sortValue)
         .slice(0, 10)
         .map(({ __sortValue, ...album }) => album);
-    }, [records, artworkEntries]);
+    }, [records]);
+
+    const tonightRecord = useMemo(() => {
+      if (!records.length) {
+        return null;
+      }
+
+      return records[Math.floor(Math.random() * records.length)];
+    }, [records]);
+
+    const tonightAlbum = tonightRecord
+      ? {
+          artist: tonightRecord.Artist || "Unknown Artist",
+          title: tonightRecord.Title || "Unknown Album",
+          year: tonightRecord.Released || "Unknown",
+          release_id: normalizeReleaseId(tonightRecord.release_id || tonightRecord.releaseId),
+          record: tonightRecord,
+        }
+      : null;
+
+    const continueListeningAlbums = useMemo(() => {
+      return recentlyViewed.map((entry) => {
+        const matchingRecord = records.find((record) => getAlbumKey(record) === entry.albumKey);
+        const releaseId = normalizeReleaseId(
+          matchingRecord?.release_id || matchingRecord?.releaseId || entry.release_id
+        );
+
+        return {
+          albumKey: entry.albumKey,
+          artist: matchingRecord?.Artist || entry.artist || "Unknown Artist",
+          title: matchingRecord?.Title || entry.album || "Unknown Album",
+          year: matchingRecord?.Released || "Unknown",
+          release_id: releaseId,
+          record:
+            matchingRecord || {
+              albumKey: entry.albumKey,
+              release_id: releaseId,
+              Artist: entry.artist || "Unknown Artist",
+              Title: entry.album || "Unknown Album",
+              Released: "Unknown",
+              cover: entry.artwork || null,
+              thumb: entry.artwork || null,
+            },
+        };
+      });
+    }, [recentlyViewed, records]);
+
+    const trackCount = records.reduce(
+      (total, record) => total + Number(record.tracks || record.trackCount || record["Track Count"] || 0),
+      0
+    );
+    const memoryCount = Object.values(savedAlbumDetails).filter((entry) => entry?.memory?.trim()).length;
+    const uniqueYears = Array.from(
+      new Set(
+        records
+          .map((record) => Number(record.Released))
+          .filter((year) => Number.isFinite(year) && year > 0)
+      )
+    ).sort((firstYear, secondYear) => firstYear - secondYear);
+    const dashboardStats = [
+      { label: "Albums", value: records.length || 0, hint: "Curated sleeves" },
+      { label: "Artists", value: collectionStats.totalArtists, hint: "Across the archive" },
+      { label: "Tracks", value: trackCount || "N/A", hint: "When metadata is available" },
+      { label: "Years", value: uniqueYears.length || 0, hint: "Distinct release years" },
+      { label: "Memories", value: memoryCount, hint: "Stories saved" },
+    ];
+    const memoryEntries = memoriesByArtist.flatMap((group) => group.entries);
+    const randomMemoryEntry = useMemo(() => {
+      if (!memoryEntries.length) {
+        return null;
+      }
+
+      return memoryEntries[Math.floor(Math.random() * memoryEntries.length)];
+    }, [memoryEntries]);
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+    const tonightSavedDetails = tonightRecord ? getSavedAlbum(tonightRecord) : {};
 
     function handleLatestArrivalSelect(album) {
-      const matchingRecord = records.find((record) => {
-        const recordKey = getAlbumKey(record);
-        const recordReleaseId = record.release_id || record.releaseId || recordKey;
-        return String(recordReleaseId) === String(album.releaseId) || recordKey === album.releaseId;
-      });
-
-      if (matchingRecord) {
-        openAlbum(matchingRecord);
+      if (album?.record) {
+        openAlbum(album.record);
       }
     }
 
+    function handleOpenYouTubeMusic(record) {
+      const search = `${record?.Artist || ""} ${record?.Title || ""}`.trim();
+      const encodedSearch = encodeURIComponent(search);
+      window.open(`https://music.youtube.com/search?q=${encodedSearch}`, "_blank", "noopener,noreferrer");
+    }
+
+    function handleToggleTonightFavorite(record) {
+      const albumKey = getAlbumKey(record);
+      const savedDetails = getSavedAlbum(record);
+
+      saveAlbumMetadata({
+        ...record,
+        albumKey,
+        favorite: !savedDetails.favorite,
+        rating: savedDetails.rating || 0,
+      });
+    }
+
     return (
-      <>
-        <section className="glass-panel home-crate-hero">
-          <div className="home-crate-hero__copy">
-            <p className="home-crate-hero__kicker">Curated Vinyl Home</p>
-            <h2 className="home-crate-hero__title">Open the crate and rediscover your memories.</h2>
-            <p className="home-crate-hero__text">
-              Built like a premium listening room, your collection begins with a handcrafted crate of records waiting to be replayed.
-              Dive into today&apos;s pick or spin the deck for a surprise.
-            </p>
-            <div className="home-crate-hero__actions">
-              <button
-                type="button"
-                className="collection-button"
-                onClick={() => {
-                  if (todayAlbum) {
-                    openAlbum(todayAlbum);
-                  }
-                }}
-                disabled={!todayAlbum}
-              >
-                Open Today&apos;s Record
-              </button>
-
-              <button type="button" onClick={surpriseMe} className="surprise-button">
-                Surprise Me
-              </button>
-            </div>
-          </div>
-
-          <div className="crate-stage" aria-label="Wooden record crate showcase">
-            <div className="crate-shadow" />
-            <div className="crate-box">
-              <div className="crate-rim" />
-
-              <div className="crate-slats" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-                <span />
-              </div>
-
-              <div className="crate-records">
-                {crateSpotlightRecords[2] ? (
-                  <article className="crate-record crate-record--back crate-record--left" aria-hidden="true">
-                    <p className="crate-record__artist">{crateSpotlightRecords[2].Artist}</p>
-                    <p className="crate-record__title">{crateSpotlightRecords[2].Title}</p>
-                  </article>
-                ) : null}
-
-                {crateSpotlightRecords[1] ? (
-                  <article className="crate-record crate-record--back crate-record--right" aria-hidden="true">
-                    <p className="crate-record__artist">{crateSpotlightRecords[1].Artist}</p>
-                    <p className="crate-record__title">{crateSpotlightRecords[1].Title}</p>
-                  </article>
-                ) : null}
-
-                <button
-                  type="button"
-                  className="crate-record crate-record--front"
-                  onClick={() => {
-                    if (todayAlbum) {
-                      openAlbum(todayAlbum);
-                    }
-                  }}
-                  disabled={!todayAlbum}
-                >
-                  <div className="crate-record__cover">
-                    {todayArtwork ? (
-                      <img src={todayArtwork} alt={todayAlbum?.Title || "Today album artwork"} className="crate-record__image" />
-                    ) : (
-                      <div className="artwork-state artwork-state--placeholder" aria-label="No artwork available">
-                        <span className="artwork-state__monogram">M&amp;M</span>
-                        <span className="artwork-state__label">Music &amp; Memories</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="crate-record__meta">
-                    <p className="crate-record__artist">{todayAlbum?.Artist || "Loading artist"}</p>
-                    <p className="crate-record__title">{todayAlbum?.Title || "Loading album"}</p>
-                  </div>
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <LatestArrivalsRack albums={latestArrivalAlbums} onSelect={handleLatestArrivalSelect} />
-
-        <section className="home-support-grid">
-          <article className="glass-panel home-note-card">
-            <div className="section-heading">
-              <p className="section-heading__eyebrow">Today&apos;s Album</p>
-              <h2 className="section-heading__title">Your featured daily spin</h2>
-            </div>
-
-            {todayAlbum ? (
-              <div className="home-note-card__content">
-                <p className="home-note-card__artist">{todayAlbum.Artist}</p>
-                <p className="home-note-card__title">{todayAlbum.Title}</p>
-                <button type="button" className="collection-button" onClick={() => openAlbum(todayAlbum)}>
-                  Open Album
-                </button>
-              </div>
-            ) : (
-              <p className="empty-state">Loading daily album...</p>
-            )}
-          </article>
-
-          <article className="glass-panel surprise-panel">
-            <div className="section-heading">
-              <p className="section-heading__eyebrow">Deck Shuffle</p>
-              <h2 className="section-heading__title">Spin something unexpected</h2>
-            </div>
-            <p className="surprise-panel__copy">One tap picks a random record and opens its full story instantly.</p>
-            <button onClick={surpriseMe} className="surprise-button surprise-button--wide">
-              Surprise Me
-            </button>
-          </article>
-        </section>
-
-        <section className="dashboard-stack">
-          <div className="section-heading">
-            <p className="section-heading__eyebrow">Collection at a Glance</p>
-            <h2 className="section-heading__title">Your vault, elegantly summarized</h2>
-          </div>
-
-          <section className="stats-grid">
-            {collectionStatItems.map((stat) => (
-              <article key={stat.label} className="glass-card stat-card">
-                <div className="stat-card__label">
-                  <span className="stat-card__icon">{stat.icon}</span>
-                  <span>{stat.label}</span>
-                </div>
-                {stat.detail ? <p className="stat-card__detail">{stat.detail}</p> : null}
-                <div
-                  className={`stat-card__value${
-                    stat.label === "Most Collected Artist" ? " stat-card__value--artist" : ""
-                  }`}
-                >
-                  {stat.label === "Most Collected Artist" && stat.value !== "N/A" ? (
-                    <button type="button" className="artist-link-button" onClick={() => openArtistView(stat.value)}>
-                      {stat.value}
-                    </button>
-                  ) : (
-                    stat.value
-                  )}
-                </div>
-              </article>
-            ))}
-          </section>
-
-          <section className="value-panel glass-panel">
-            <div className="section-heading">
-              <p className="section-heading__eyebrow">Collection Value</p>
-              <h2 className="section-heading__title">Estimated marketplace snapshot</h2>
-            </div>
-
-            <div className="value-grid">
-              {collectionValueItems.map((stat) => (
-                <article key={stat.label} className="glass-card value-card">
-                  <div className="stat-card__label">
-                    <span className="stat-card__icon">{stat.icon}</span>
-                    <span>{stat.label}</span>
-                  </div>
-                  <div
-                    className={`value-card__value${
-                      stat.label === "Most Valuable Album" ? " value-card__value--album" : ""
-                    }`}
-                  >
-                    {stat.value}
-                  </div>
-                  <p className="value-card__note">{stat.note}</p>
-                </article>
-              ))}
-            </div>
-          </section>
-        </section>
-
-        {renderRecentlyPlayedSection()}
-        {message && <p className="status-message">{message}</p>}
-      </>
+      <DashboardLayout
+        hero={
+          <HeroSection
+            greeting={greeting}
+            name="Music and Memories"
+            subtitle="Pick your next spin."
+            extra={<HomeTrackSearch onOpenAlbum={openAlbum} />}
+          />
+        }
+        stats={<CollectionStats items={dashboardStats} />}
+        continueListening={
+          <ContinueListening
+            albums={continueListeningAlbums}
+            onSelect={openAlbum}
+            onArtistClick={openArtistView}
+          />
+        }
+        recentlyAdded={<RecentlyAdded albums={latestArrivalAlbums} onSelect={handleLatestArrivalSelect} />}
+        tonightsPick={
+          <TonightsPick
+            album={tonightAlbum}
+            isFavorite={Boolean(tonightSavedDetails.favorite)}
+            onOpenAlbum={openAlbum}
+            onOpenYouTubeMusic={handleOpenYouTubeMusic}
+            onToggleFavorite={handleToggleTonightFavorite}
+          />
+        }
+        randomMemory={
+          <RandomMemory
+            memoryEntry={randomMemoryEntry}
+            onOpenAlbum={openAlbum}
+            onArtistClick={openArtistView}
+          />
+        }
+        bottomPlayer={<BottomPlayer album={tonightAlbum} onOpenYouTubeMusic={handleOpenYouTubeMusic} />}
+      />
     );
   }
 
@@ -1115,10 +1665,6 @@ function App() {
             className="collection-search"
           />
 
-          <button onClick={testDiscogs} className="collection-button">
-            Test Discogs
-          </button>
-
           <select
             value={collectionSort}
             onChange={(event) => setCollectionSort(event.target.value)}
@@ -1132,6 +1678,27 @@ function App() {
             <option value="year-newest">Year (Newest)</option>
             <option value="year-oldest">Year (Oldest)</option>
           </select>
+
+          <div className="collection-view-toggle" role="tablist" aria-label="Collection view mode">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={collectionView === "grid"}
+              className={`collection-view-toggle__button${collectionView === "grid" ? " is-active" : ""}`}
+              onClick={() => setCollectionView("grid")}
+            >
+              Grid
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={collectionView === "crate"}
+              className={`collection-view-toggle__button${collectionView === "crate" ? " is-active" : ""}`}
+              onClick={() => setCollectionView("crate")}
+            >
+              Crate
+            </button>
+          </div>
         </div>
 
         <div className="filter-bar" role="toolbar" aria-label="Quick collection filters">
@@ -1148,8 +1715,29 @@ function App() {
           ))}
         </div>
 
+        <div className="alphabet-filter-bar" role="toolbar" aria-label="Filter by artist initial">
+          {LETTER_FILTERS.map((letter) => (
+            <button
+              key={letter}
+              type="button"
+              className={`alphabet-filter-chip${collectionLetter === letter ? " is-active" : ""}`}
+              onClick={() => setCollectionLetter(letter)}
+            >
+              {letter}
+            </button>
+          ))}
+        </div>
+
+        <p className="collection-artwork-progress" aria-live="polite">
+          {collectionFilterLabel}: {collectionArtworkProgress.loaded}/{collectionArtworkProgress.total} loaded • {collectionArtworkProgress.loading} loading • {collectionArtworkProgress.pending} pending • {collectionArtworkProgress.failed} failed • {collectionArtworkProgress.missing} no artwork
+        </p>
+
         {message && <p className="status-message">{message}</p>}
-        {renderAlbumGrid(sortedCollectionRecords, "Premium dark glass collection view", true)}
+        <div className="collection-page-compact">
+          {collectionView === "crate"
+            ? renderAlbumCrate(sortedCollectionRecords, "Vinyl crate view", true)
+            : renderAlbumGrid(sortedCollectionRecords, "Premium dark glass collection view", true)}
+        </div>
       </>
     );
   }
@@ -1167,13 +1755,114 @@ function App() {
   }
 
   function TopRatedPage() {
+    const collectionByArtistAlbum = useMemo(() => {
+      const lookup = new Map();
+
+      records.forEach((record) => {
+        const artist = normalizeMatchText(record.Artist);
+        const album = normalizeMatchText(record.Title);
+
+        if (!artist || !album) {
+          return;
+        }
+
+        lookup.set(`${artist}|||${album}`, record);
+      });
+
+      return lookup;
+    }, [records]);
+
+    const rollingStoneRows = useMemo(() => {
+      return rollingStoneList
+        .map((entry, index) => {
+          const key = `${normalizeMatchText(entry.artist)}|||${normalizeMatchText(entry.album)}`;
+          const ownedRecord = collectionByArtistAlbum.get(key) || null;
+          const rankValue = Number.parseInt(entry.rank, 10);
+          const rank = Number.isFinite(rankValue) ? rankValue : index + 1;
+
+          return {
+            ...entry,
+            rank,
+            ownedRecord,
+          };
+        })
+        .sort((firstEntry, secondEntry) => firstEntry.rank - secondEntry.rank);
+    }, [rollingStoneList, collectionByArtistAlbum]);
+
+    const ownedCount = rollingStoneRows.filter((entry) => Boolean(entry.ownedRecord)).length;
+
     return (
       <section className="page-section">
         <div className="section-heading">
           <p className="section-heading__eyebrow">Best Rated</p>
-          <h2 className="section-heading__title">⭐ 5-Star Albums</h2>
+          <h2 className="section-heading__title">⭐ Top Rated Albums</h2>
         </div>
         {renderAlbumGrid(topRatedRecords, "Albums rated 5 stars")}
+
+        <section className="rolling-stone-panel glass-panel" aria-label="Rolling Stone Top 500 tracker">
+          <div className="rolling-stone-panel__header">
+            <div>
+              <p className="section-heading__eyebrow">Collection Tracker</p>
+              <h3 className="rolling-stone-panel__title">Rolling Stone Top 500</h3>
+              <p className="rolling-stone-panel__meta">
+                {rollingStoneRows.length ? `${ownedCount}/${rollingStoneRows.length} owned` : "Import your list to start tracking"}
+              </p>
+            </div>
+
+            <div className="rolling-stone-panel__actions">
+              {!rollingStoneRows.length ? (
+                <button type="button" className="collection-button" onClick={importRollingStoneListOnline}>
+                  Import Current Top 500 Online
+                </button>
+              ) : null}
+              {rollingStoneRows.length ? (
+                <button type="button" className="surprise-button" onClick={clearRollingStoneList}>
+                  Clear List
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          <p className="rolling-stone-panel__hint">
+            Pulls the current public Top 500 list online, then marks what you own.
+          </p>
+
+          {rollingStoneStatus ? <p className="status-message">{rollingStoneStatus}</p> : null}
+
+          {rollingStoneRows.length ? (
+            <ul className="rolling-stone-panel__list">
+              {rollingStoneRows.map((entry) => (
+                <li key={`${entry.rank}-${entry.artist}-${entry.album}`} className="rolling-stone-panel__item">
+                  <p className="rolling-stone-panel__rank">#{entry.rank}</p>
+                  <div className="rolling-stone-panel__copy">
+                    <p className="rolling-stone-panel__album">{entry.album}</p>
+                    <p className="rolling-stone-panel__artist">{entry.artist}</p>
+                  </div>
+                  <div className="rolling-stone-panel__state">
+                    {entry.ownedRecord ? (
+                      <>
+                        <span className="rolling-stone-panel__owned" aria-label="Owned">
+                          ✓
+                        </span>
+                        <button
+                          type="button"
+                          className="collection-button"
+                          onClick={() => openAlbum(entry.ownedRecord)}
+                        >
+                          Open
+                        </button>
+                      </>
+                    ) : (
+                      <span className="rolling-stone-panel__missing" aria-label="Missing">
+                        ○
+                      </span>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
       </section>
     );
   }
@@ -1244,6 +1933,10 @@ function App() {
     return <ArtistsDirectoryView records={records} onArtistClick={openArtistView} />;
   }
 
+  function DuplicatesPage() {
+    return <DuplicateDetectorPage records={records} onOpenAlbum={openAlbum} />;
+  }
+
   return (
     <div className="app-shell">
       <div className="app-layout">
@@ -1279,8 +1972,10 @@ function App() {
             <Route path="/" element={<Navigate to="/home" replace />} />
             <Route path="/home" element={<HomePage />} />
             <Route path="/collection" element={renderCollectionPage()} />
+            <Route path="/add-music" element={<AddMusicPage onAddRecord={addRecordToCollection} />} />
             <Route path="/artists" element={<ArtistsRoute />} />
             <Route path="/artists/:artistName" element={<ArtistsRoute />} />
+            <Route path="/duplicates" element={<DuplicatesPage />} />
             <Route path="/favourites" element={<FavouritesPage />} />
             <Route path="/top-rated" element={<TopRatedPage />} />
             <Route
@@ -1326,6 +2021,9 @@ function App() {
             onSave={saveAlbumDetails}
             onMetadataChange={saveAlbumMetadata}
             onArtistClick={openArtistView}
+            onCustomArtworkUpload={saveCustomArtwork}
+            onCustomArtworkRemove={clearCustomArtwork}
+            hasCustomArtwork={Boolean(selectedAlbum && customArtworkByAlbumKey[selectedAlbum.albumKey])}
           />
         </div>
       </div>
