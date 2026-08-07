@@ -173,12 +173,23 @@
 
 .app-title {
   margin: 0;
+  display: flex;
+  align-items: center;
+  gap: clamp(12px, 2.8vw, 22px);
   font-family: 'Cormorant Garamond', Georgia, serif;
   font-size: clamp(38px, 12vw, 82px);
   line-height: 0.95;
   letter-spacing: -0.06em;
   color: #f8edda;
   text-shadow: 0 0 24px rgba(245, 197, 66, 0.16);
+}
+
+.app-title__logo {
+  width: clamp(54px, 10vw, 88px);
+  height: clamp(54px, 10vw, 88px);
+  flex: 0 0 auto;
+  display: block;
+  filter: drop-shadow(0 0 18px rgba(245, 197, 66, 0.16));
 }
 
 .app-tagline {

@@ -8,6 +8,7 @@ import AlbumModal from "./components/AlbumModal";
 import ArtistCollectionView from "./components/ArtistCollectionView";
 import ArtistsDirectoryView from "./components/ArtistsDirectoryView";
 import PlaceholderPage from "./components/PlaceholderPage";
+import mmMonogramLogo from "./assets/mm-monogram-logo.svg";
 import "./App.css";
 
 function getTraceStore() {
@@ -1169,7 +1170,10 @@ function App() {
         <div className="app-shell__inner">
           <header className="app-hero">
             <p className="app-kicker">Music & Memories</p>
-            <h1 className="app-title">📦 Music & Memories</h1>
+            <h1 className="app-title">
+              <img src={mmMonogramLogo} alt="M&amp;M" className="app-title__logo" />
+              <span>Music &amp; Memories</span>
+            </h1>
             <p className="app-tagline">Every record has a story.</p>
           </header>
 
