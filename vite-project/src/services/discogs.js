@@ -57,6 +57,8 @@ function getPersistentReleaseDetails(releaseId) {
       thumb: parsedValue.thumb || null,
       image: parsedValue.image || parsedValue.thumb || null,
       rearImage: parsedValue.rearImage || null,
+      lowestPrice: Number.isFinite(Number(parsedValue.lowestPrice)) ? Number(parsedValue.lowestPrice) : null,
+      priceCurrency: parsedValue.priceCurrency || "USD",
       label: parsedValue.label || "",
       genres: parsedValue.genres || "",
     };
@@ -79,6 +81,8 @@ function setPersistentReleaseDetails(releaseId, releaseDetails) {
         thumb: releaseDetails.thumb || null,
         image: releaseDetails.image || releaseDetails.thumb || null,
         rearImage: releaseDetails.rearImage || null,
+        lowestPrice: Number.isFinite(Number(releaseDetails.lowestPrice)) ? Number(releaseDetails.lowestPrice) : null,
+        priceCurrency: releaseDetails.priceCurrency || "USD",
         label: releaseDetails.label || "",
         genres: releaseDetails.genres || "",
       })
@@ -95,6 +99,8 @@ function buildItunesFallbackResult(fallbackArtworkUrl, fallbackContext) {
     thumb: fallbackArtworkUrl,
     image: fallbackArtworkUrl,
     rearImage: null,
+    lowestPrice: null,
+    priceCurrency: "USD",
     label: "",
     genres: "",
   };
@@ -583,6 +589,8 @@ export async function getRelease(releaseId, fallbackContext = null) {
         thumb,
         image: image || thumb || null,
         rearImage,
+        lowestPrice: Number.isFinite(Number(data.lowest_price)) ? Number(data.lowest_price) : null,
+        priceCurrency: data?.lowest_price !== undefined ? "USD" : "USD",
         label:
           data.labels && data.labels.length > 0
             ? data.labels[0].name

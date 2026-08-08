@@ -14,7 +14,6 @@ import ContinueListening from "./components/dashboard/ContinueListening";
 import DashboardLayout from "./components/dashboard/DashboardLayout";
 import DuplicateDetectorPage from "./components/DuplicateDetectorPage";
 import HeroSection from "./components/dashboard/HeroSection";
-import HomeTrackSearch from "./components/dashboard/HomeTrackSearch";
 import RandomMemory from "./components/dashboard/RandomMemory";
 import RecentlyAdded from "./components/dashboard/RecentlyAdded";
 import SettingsPage from "./components/SettingsPage";
@@ -218,6 +217,22 @@ function normalizeMatchText(value) {
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function formatCurrencyAmount(amount, currencyCode = "USD") {
+  if (!Number.isFinite(amount)) {
+    return "N/A";
+  }
+
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currencyCode || "USD",
+      maximumFractionDigits: 0,
+    }).format(amount);
+  } catch {
+    return `${currencyCode || "USD"} ${Math.round(amount).toLocaleString()}`;
+  }
 }
 
 function normalizeRollingStoneRows(rows) {
@@ -426,6 +441,12 @@ function App() {
   );
   const [rollingStoneList, setRollingStoneList] = useState(() => loadRollingStoneList());
   const [rollingStoneStatus, setRollingStoneStatus] = useState("");
+  const [collectionWorthEstimate, setCollectionWorthEstimate] = useState({
+    total: 0,
+    sampled: 0,
+    sampleSize: 0,
+    currency: "USD",
+  });
   const records = useMemo(() => [...addedRecords, ...baseRecords], [addedRecords, baseRecords]);
   const recentlyViewedAlbumKeys = recentlyViewed.map((entry) => entry.albumKey);
 
@@ -741,8 +762,40 @@ function App() {
     return ownedAlbumKeys;
   }, [rollingStoneList, records]);
 
+  const notListenedAlbumKeySet = useMemo(() => {
+    const listenedAlbumKeySet = new Set(recentlyViewedAlbumKeys);
+
+    return new Set(
+      records
+        .map((record) => getAlbumKey(record))
+        .filter((albumKey) => !listenedAlbumKeySet.has(albumKey))
+    );
+  }, [records, recentlyViewedAlbumKeys]);
+
+  const notListenedPreviewAlbumKeySet = useMemo(() => {
+    const listenedAlbumKeySet = new Set(recentlyViewedAlbumKeys);
+
+    const unplayedByNewestAdded = [...records]
+      .filter((record) => !listenedAlbumKeySet.has(getAlbumKey(record)))
+      .map((record) => {
+        const dateAddedRaw = record["Date Added"] || record.dateAdded || record.DateAdded || "";
+        const sortValue = dateAddedRaw ? new Date(dateAddedRaw).getTime() : 0;
+
+        return {
+          albumKey: getAlbumKey(record),
+          sortValue,
+        };
+      })
+      .sort((firstItem, secondItem) => secondItem.sortValue - firstItem.sortValue)
+      .slice(0, 5);
+
+    return new Set(unplayedByNewestAdded.map((item) => item.albumKey));
+  }, [records, recentlyViewedAlbumKeys]);
+
   const quickFilters = [
     { id: "all", label: "All Records" },
+    { id: "unplayed", label: "🔕 Not Listened" },
+    { id: "unplayed5", label: "🖐 Not Listened (5)" },
     { id: "favorites", label: "❤️ Favourites" },
     { id: "rated5", label: "⭐ Top Rated" },
     { id: "memories", label: "📝 Has Memories" },
@@ -759,6 +812,10 @@ function App() {
     const albumKey = getAlbumKey(record);
 
     switch (filterId) {
+      case "unplayed":
+        return notListenedAlbumKeySet.has(albumKey);
+      case "unplayed5":
+        return notListenedPreviewAlbumKeySet.has(albumKey);
       case "favorites":
         return Boolean(savedAlbum.favorite);
       case "rated5":
@@ -783,6 +840,90 @@ function App() {
         return true;
     }
   }
+
+  useEffect(() => {
+    let isCanceled = false;
+
+    async function loadCollectionWorthEstimate() {
+      const releaseIdToContext = new Map();
+
+      records.forEach((record) => {
+        const releaseId = normalizeReleaseId(record.release_id || record.releaseId);
+        if (!releaseId || releaseIdToContext.has(releaseId)) {
+          return;
+        }
+
+        releaseIdToContext.set(releaseId, {
+          artist: record.Artist,
+          title: record.Title,
+          year: record.Released,
+        });
+      });
+
+      const releaseIds = Array.from(releaseIdToContext.keys());
+      const sampleReleaseIds = releaseIds.slice(0, 10);
+
+      if (!sampleReleaseIds.length) {
+        if (!isCanceled) {
+          setCollectionWorthEstimate({
+            total: 0,
+            sampled: 0,
+            sampleSize: 0,
+            currency: "USD",
+          });
+        }
+        return;
+      }
+
+      const pricedValues = [];
+      let currencyCode = "USD";
+
+      for (let index = 0; index < sampleReleaseIds.length; index += 4) {
+        const chunk = sampleReleaseIds.slice(index, index + 4);
+        const results = await Promise.allSettled(
+          chunk.map(async (releaseId) => {
+            const fallbackContext = releaseIdToContext.get(releaseId) || null;
+            return getRelease(releaseId, fallbackContext);
+          })
+        );
+
+        results.forEach((result) => {
+          if (result.status !== "fulfilled") {
+            return;
+          }
+
+          const releaseData = result.value;
+          const lowestPrice = Number(releaseData?.lowestPrice);
+
+          if (!Number.isFinite(lowestPrice) || lowestPrice <= 0) {
+            return;
+          }
+
+          pricedValues.push(lowestPrice);
+          if (releaseData?.priceCurrency) {
+            currencyCode = releaseData.priceCurrency;
+          }
+        });
+      }
+
+      if (isCanceled) {
+        return;
+      }
+
+      setCollectionWorthEstimate({
+        total: pricedValues.reduce((sum, value) => sum + value, 0),
+        sampled: pricedValues.length,
+        sampleSize: sampleReleaseIds.length,
+        currency: currencyCode,
+      });
+    }
+
+    void loadCollectionWorthEstimate();
+
+    return () => {
+      isCanceled = true;
+    };
+  }, [records]);
 
   const filteredRecords = searchMatchedRecords.filter((record) =>
     recordMatchesFilter(record, activeFilter)
@@ -1738,22 +1879,34 @@ function App() {
     }, [recentlyViewed, records]);
 
     const memoryCount = Object.values(savedAlbumDetails).filter((entry) => entry?.memory?.trim()).length;
-    const uniqueYears = Array.from(
-      new Set(
-        records
-          .map((record) => Number(record.Released))
-          .filter((year) => Number.isFinite(year) && year > 0)
-      )
-    ).sort((firstYear, secondYear) => firstYear - secondYear);
     const dashboardStats = [
       { label: "Albums", value: records.length || 0, hint: "Curated sleeves" },
       { label: "Artists", value: collectionStats.totalArtists, hint: "Across the archive" },
-      { label: "Years", value: uniqueYears.length || 0, hint: "Distinct release years" },
+      {
+        label: "Not Listened",
+        value: notListenedAlbumKeySet.size,
+        hint: "Tap to view 5 picks",
+        onClick: () => {
+          setActiveFilter("unplayed5");
+          setCollectionLetter("ALL");
+          setSearch("");
+          navigate("/collection");
+        },
+      },
       {
         label: "Memories",
         value: memoryCount,
         hint: "Stories saved - tap to open",
         onClick: () => navigate("/memories"),
+      },
+      {
+        label: "Discogs Worth",
+        value: collectionWorthEstimate.sampled
+          ? formatCurrencyAmount(collectionWorthEstimate.total, collectionWorthEstimate.currency)
+          : "N/A",
+        hint: collectionWorthEstimate.sampled
+          ? `From ${collectionWorthEstimate.sampled}/${collectionWorthEstimate.sampleSize} priced releases`
+          : "No Discogs price data yet",
       },
     ];
     const memoryEntries = memoriesByArtist.flatMap((group) => group.entries);
@@ -1799,7 +1952,6 @@ function App() {
             greeting={greeting}
             name="Music and Memories"
             subtitle="Pick your next spin."
-            extra={<HomeTrackSearch onOpenAlbum={openAlbum} />}
           />
         }
         stats={<CollectionStats items={dashboardStats} />}
