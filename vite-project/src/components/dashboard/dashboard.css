@@ -385,6 +385,19 @@
   box-shadow: 0 12px 20px rgba(0, 0, 0, 0.14);
 }
 
+.dashboard-stat-card--button {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dashboard-stat-card--button:hover,
+.dashboard-stat-card--button:focus-visible {
+  border-color: rgba(245, 197, 66, 0.34);
+  box-shadow: 0 14px 24px rgba(0, 0, 0, 0.2);
+  outline: none;
+}
+
 .dashboard-stat-card__label,
 .dashboard-stat-card__hint,
 .dashboard-overview__legend-label,

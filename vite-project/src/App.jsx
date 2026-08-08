@@ -1737,10 +1737,6 @@ function App() {
       });
     }, [recentlyViewed, records]);
 
-    const trackCount = records.reduce(
-      (total, record) => total + Number(record.tracks || record.trackCount || record["Track Count"] || 0),
-      0
-    );
     const memoryCount = Object.values(savedAlbumDetails).filter((entry) => entry?.memory?.trim()).length;
     const uniqueYears = Array.from(
       new Set(
@@ -1752,9 +1748,13 @@ function App() {
     const dashboardStats = [
       { label: "Albums", value: records.length || 0, hint: "Curated sleeves" },
       { label: "Artists", value: collectionStats.totalArtists, hint: "Across the archive" },
-      { label: "Tracks", value: trackCount || "N/A", hint: "When metadata is available" },
       { label: "Years", value: uniqueYears.length || 0, hint: "Distinct release years" },
-      { label: "Memories", value: memoryCount, hint: "Stories saved" },
+      {
+        label: "Memories",
+        value: memoryCount,
+        hint: "Stories saved - tap to open",
+        onClick: () => navigate("/memories"),
+      },
     ];
     const memoryEntries = memoriesByArtist.flatMap((group) => group.entries);
     const randomMemoryEntry = useMemo(() => {
