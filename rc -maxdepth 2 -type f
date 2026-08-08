@@ -1,0 +1,139 @@
+[1mdiff --git a/vite-project/src/services/artworkSync.js b/vite-project/src/services/artworkSync.js[m
+[1mindex 703508c..1b90b1e 100644[m
+[1m--- a/vite-project/src/services/artworkSync.js[m
+[1m+++ b/vite-project/src/services/artworkSync.js[m
+[36m@@ -1,6 +1,25 @@[m
+ import { getRelease } from "./discogs";[m
+ import { hasArtwork, saveArtwork } from "./artworkCache";[m
+ [m
+[32m+[m[32mlet cancelRequested = false;[m
+[32m+[m[32mlet activeDownloadController = null;[m
+[32m+[m
+[32m+[m[32mlet syncState = {[m
+[32m+[m[32m  isSyncing: false,[m
+[32m+[m[32m  cancelled: false,[m
+[32m+[m[32m  total: 0,[m
+[32m+[m[32m  completed: 0,[m
+[32m+[m[32m  succeeded: 0,[m
+[32m+[m[32m  failed: 0,[m
+[32m+[m[32m  skippedCached: 0,[m
+[32m+[m[32m  skippedUnavailable: 0,[m
+[32m+[m[32m  startedAt: null,[m
+[32m+[m[32m  finishedAt: null,[m
+[32m+[m[32m  currentReleaseId: null,[m
+[32m+[m[32m  results: [],[m
+[32m+[m[32m  updates: [],[m
+[32m+[m[32m};[m
+[32m+[m
+ function normalizeReleaseId(releaseId) {[m
+   if (releaseId === null || releaseId === undefined || releaseId === "") {[m
+     return "";[m
+[36m@@ -32,7 +51,15 @@[m [mfunction collectUniqueReleaseIds(records) {[m
+ }[m
+ [m
+ async function downloadArtworkBlob(artworkUrl) {[m
+[31m-  const response = await fetch(artworkUrl);[m
+[32m+[m[32m  activeDownloadController = new AbortController();[m
+[32m+[m
+[32m+[m[32m  let response;[m
+[32m+[m
+[32m+[m[32m  try {[m
+[32m+[m[32m    response = await fetch(artworkUrl, { signal: activeDownloadController.signal });[m
+[32m+[m[32m  } finally {[m
+[32m+[m[32m    activeDownloadController = null;[m
+[32m+[m[32m  }[m
+ [m
+   if (!response.ok) {[m
+     throw new Error(`Artwork download failed: ${response.status}`);[m
+[36m@@ -97,14 +124,39 @@[m [mfunction appendProgress(progress, result, onProgress) {[m
+   if (typeof onProgress === "function") {[m
+     onProgress(update);[m
+   }[m
+[32m+[m
+[32m+[m[32m  syncState = {[m
+[32m+[m[32m    ...syncState,[m
+[32m+[m[32m    ...progress,[m
+[32m+[m[32m    currentReleaseId: progress.currentReleaseId,[m
+[32m+[m[32m    results: [...progress.results],[m
+[32m+[m[32m    updates: [...progress.updates],[m
+[32m+[m[32m  };[m
+ }[m
+ [m
+ export async function syncArtworkBatch(records, options = {}) {[m
+[32m+[m[32m  if (syncState.isSyncing) {[m
+[32m+[m[32m    throw new Error("Artwork sync is already in progress.");[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  cancelRequested = false;[m
+   const onProgress = options?.onProgress;[m
+   const releaseIds = collectUniqueReleaseIds(records);[m
+   const progress = createInitialProgress(releaseIds.length);[m
+ [m
+[32m+[m[32m  syncState = {[m
+[32m+[m[32m    isSyncing: true,[m
+[32m+[m[32m    cancelled: false,[m
+[32m+[m[32m    ...progress,[m
+[32m+[m[32m    results: [],[m
+[32m+[m[32m    updates: [],[m
+[32m+[m[32m  };[m
+[32m+[m
+   for (const releaseId of releaseIds) {[m
+[32m+[m[32m    if (cancelRequested) {[m
+[32m+[m[32m      break;[m
+[32m+[m[32m    }[m
+[32m+[m
+     try {[m
+       const cached = await hasArtwork(releaseId);[m
+ [m
+[36m@@ -164,14 +216,50 @@[m [mexport async function syncArtworkBatch(records, options = {}) {[m
+         onProgress[m
+       );[m
+     }[m
+[32m+[m
+   }[m
+ [m
+   progress.currentReleaseId = null;[m
+   progress.finishedAt = Date.now();[m
+ [m
+[32m+[m[32m  syncState = {[m
+[32m+[m[32m    ...syncState,[m
+[32m+[m[32m    ...progress,[m
+[32m+[m[32m    isSyncing: false,[m
+[32m+[m[32m    cancelled: cancelRequested,[m
+[32m+[m[32m    currentReleaseId: null,[m
+[32m+[m[32m    finishedAt: progress.finishedAt,[m
+[32m+[m[32m    results: [...progress.results],[m
+[32m+[m[32m    updates: [...progress.updates],[m
+[32m+[m[32m  };[m
+[32m+[m
+[32m+[m[32m  activeDownloadController = null;[m
+[32m+[m
+   return {[m
+     ...progress,[m
+     results: [...progress.results],[m
+     updates: [...progress.updates],[m
+   };[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mexport function cancelSync() {[m
+[32m+[m[32m  if (!syncState.isSyncing) {[m
+[32m+[m[32m    return false;[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  cancelRequested = true;[m
+[32m+[m
+[32m+[m[32m  if (activeDownloadController) {[m
+[32m+[m[32m    activeDownloadController.abort();[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  return true;[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mexport function getProgress() {[m
+[32m+[m[32m  return {[m
+[32m+[m[32m    ...syncState,[m
+[32m+[m[32m    results: [...syncState.results],[m
+[32m+[m[32m    updates: [...syncState.updates],[m
+[32m+[m[32m  };[m
+ }[m
+\ No newline at end of file[m
