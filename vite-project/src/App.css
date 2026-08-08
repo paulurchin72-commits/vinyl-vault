@@ -1158,6 +1158,78 @@
   gap: 14px;
 }
 
+.settings-page {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-page__panel {
+  border-radius: 24px;
+  padding: 18px;
+  display: grid;
+  gap: 18px;
+}
+
+.settings-page__panel-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.settings-page__panel-title {
+  margin: 0 0 8px;
+  color: #fff8eb;
+  font-size: 22px;
+}
+
+.settings-page__panel-copy {
+  margin: 0;
+  color: rgba(241, 235, 225, 0.78);
+  line-height: 1.55;
+}
+
+.settings-page__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.settings-page__stat {
+  border-radius: 18px;
+  padding: 16px;
+}
+
+.settings-page__stat-value {
+  margin: 0;
+  color: #fff8eb;
+  font-size: 30px;
+  font-weight: 800;
+}
+
+.settings-page__stat-label {
+  margin: 6px 0 0;
+  color: rgba(241, 235, 225, 0.72);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.settings-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.settings-page__actions .album-modal__button {
+  width: auto;
+  min-width: 190px;
+}
+
+.settings-page__file-input {
+  display: none;
+}
+
 .memories-groups {
   display: grid;
   gap: 12px;
@@ -2192,6 +2264,32 @@
     color: rgba(245, 197, 66, 0.88);
     font-size: 12px;
     letter-spacing: 0.02em;
+  }
+
+  .album-modal__artwork-toggle {
+    display: inline-flex;
+    gap: 8px;
+    margin: 2px 0 4px;
+  }
+
+  .album-modal__artwork-toggle-button {
+    min-height: 38px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(248, 237, 218, 0.92);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .album-modal__artwork-toggle-button.is-active {
+    background: linear-gradient(180deg, rgba(245, 197, 66, 0.24), rgba(245, 197, 66, 0.1));
+    border-color: rgba(245, 197, 66, 0.42);
+    color: #fff8eb;
   }
 
   .album-modal__image {

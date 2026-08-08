@@ -17,6 +17,7 @@ import HeroSection from "./components/dashboard/HeroSection";
 import HomeTrackSearch from "./components/dashboard/HomeTrackSearch";
 import RandomMemory from "./components/dashboard/RandomMemory";
 import RecentlyAdded from "./components/dashboard/RecentlyAdded";
+import SettingsPage from "./components/SettingsPage";
 import TonightsPick from "./components/dashboard/TonightsPick";
 import PlaceholderPage from "./components/PlaceholderPage";
 import mmMonogramLogo from "./assets/mm-monogram-logo.svg";
@@ -94,9 +95,7 @@ function loadSavedMemories() {
   return loadStoredJson(SAVED_MEMORIES_KEY, {});
 }
 
-function loadRecentlyViewed() {
-  const storedValue = loadStoredJson(RECENTLY_VIEWED_KEY, []);
-
+function normalizeRecentlyViewedEntries(storedValue) {
   if (!Array.isArray(storedValue)) {
     return [];
   }
@@ -131,9 +130,11 @@ function loadRecentlyViewed() {
     .slice(0, RECENTLY_VIEWED_LIMIT);
 }
 
-function loadAddedRecords() {
-  const storedValue = loadStoredJson(ADDED_RECORDS_KEY, []);
+function loadRecentlyViewed() {
+  return normalizeRecentlyViewedEntries(loadStoredJson(RECENTLY_VIEWED_KEY, []));
+}
 
+function normalizeAddedRecords(storedValue) {
   if (!Array.isArray(storedValue)) {
     return [];
   }
@@ -146,9 +147,11 @@ function loadAddedRecords() {
     }));
 }
 
-function loadRollingStoneList() {
-  const storedValue = loadStoredJson(ROLLING_STONE_LIST_KEY, []);
+function loadAddedRecords() {
+  return normalizeAddedRecords(loadStoredJson(ADDED_RECORDS_KEY, []));
+}
 
+function normalizeRollingStoneEntries(storedValue) {
   if (!Array.isArray(storedValue)) {
     return [];
   }
@@ -173,6 +176,39 @@ function loadRollingStoneList() {
       };
     })
     .filter(Boolean);
+}
+
+function loadRollingStoneList() {
+  return normalizeRollingStoneEntries(loadStoredJson(ROLLING_STONE_LIST_KEY, []));
+}
+
+function normalizeSavedAlbumDetails(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([albumKey, entry]) => albumKey && entry && typeof entry === "object")
+      .map(([albumKey, entry]) => [
+        albumKey,
+        {
+          memory: typeof entry.memory === "string" ? entry.memory : "",
+          favorite: Boolean(entry.favorite),
+          rating: Number(entry.rating) || 0,
+        },
+      ])
+  );
+}
+
+function normalizeCustomArtworkEntries(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).filter(([albumKey, artworkUrl]) => albumKey && typeof artworkUrl === "string" && artworkUrl)
+  );
 }
 
 function normalizeMatchText(value) {
@@ -1247,6 +1283,100 @@ function App() {
     });
   }
 
+  function exportLibraryBackup() {
+    const exportedAt = new Date().toISOString();
+    const fileName = `music-and-memories-backup-${exportedAt.slice(0, 10)}.json`;
+    const backupPayload = {
+      version: 1,
+      exportedAt,
+      data: {
+        addedRecords,
+        savedAlbumDetails,
+        recentlyViewed,
+        customArtworkByAlbumKey,
+        rollingStoneList,
+      },
+    };
+
+    const backupBlob = new Blob([JSON.stringify(backupPayload, null, 2)], {
+      type: "application/json",
+    });
+
+    const downloadUrl = URL.createObjectURL(backupBlob);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(downloadUrl);
+
+    return fileName;
+  }
+
+  async function importLibraryBackup(file) {
+    if (!file) {
+      throw new Error("Choose a backup file first.");
+    }
+
+    const fileText = await file.text();
+    const parsedBackup = JSON.parse(fileText);
+    const backupData = parsedBackup?.data && typeof parsedBackup.data === "object"
+      ? parsedBackup.data
+      : parsedBackup;
+
+    const nextAddedRecords = normalizeAddedRecords(backupData?.addedRecords || []);
+    const nextSavedAlbumDetails = normalizeSavedAlbumDetails(backupData?.savedAlbumDetails || {});
+    const nextRecentlyViewed = normalizeRecentlyViewedEntries(backupData?.recentlyViewed || []);
+    const nextCustomArtwork = normalizeCustomArtworkEntries(backupData?.customArtworkByAlbumKey || {});
+    const nextRollingStoneList = normalizeRollingStoneEntries(backupData?.rollingStoneList || []);
+
+    setAddedRecords(nextAddedRecords);
+    setSavedAlbumDetails(nextSavedAlbumDetails);
+    setRecentlyViewed(nextRecentlyViewed);
+    setCustomArtworkByAlbumKey(nextCustomArtwork);
+    setRollingStoneList(nextRollingStoneList);
+    setRollingStoneStatus(nextRollingStoneList.length ? `Imported ${nextRollingStoneList.length} tracker entries.` : "");
+    setSelectedAlbum(null);
+
+    try {
+      localStorage.setItem(ADDED_RECORDS_KEY, JSON.stringify(nextAddedRecords));
+      localStorage.setItem(SAVED_MEMORIES_KEY, JSON.stringify(nextSavedAlbumDetails));
+      localStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify(nextRecentlyViewed));
+      localStorage.setItem(CUSTOM_ARTWORK_KEY, JSON.stringify(nextCustomArtwork));
+      localStorage.setItem(ROLLING_STONE_LIST_KEY, JSON.stringify(nextRollingStoneList));
+    } catch {
+      // Keep imported state in memory even if persistence hits a browser quota limit.
+    }
+
+    return `Imported ${nextAddedRecords.length} added records, ${Object.keys(nextSavedAlbumDetails).length} album notes, and ${Object.keys(nextCustomArtwork).length} custom artwork overrides.`;
+  }
+
+  function clearRecentlyViewedHistory() {
+    setRecentlyViewed([]);
+
+    try {
+      localStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify([]));
+    } catch {
+      // Ignore storage failures and keep the in-memory reset.
+    }
+
+    return "Recently viewed history cleared.";
+  }
+
+  function clearRollingStoneTracker() {
+    setRollingStoneList([]);
+    setRollingStoneStatus("");
+
+    try {
+      localStorage.setItem(ROLLING_STONE_LIST_KEY, JSON.stringify([]));
+    } catch {
+      // Ignore storage failures and keep the in-memory reset.
+    }
+
+    return "Rolling Stone tracker cleared.";
+  }
+
   async function importRollingStoneListOnline() {
     setRollingStoneStatus("Fetching current Top 500 list...");
 
@@ -2006,10 +2136,18 @@ function App() {
             <Route
               path="/settings"
               element={
-                <PlaceholderPage
-                  title="⚙ Settings"
-                  eyebrow="Coming Soon"
-                  description="Application settings and personalization controls are prepared for upcoming builds."
+                <SettingsPage
+                  backupSummary={{
+                    addedRecords: addedRecords.length,
+                    albumNotes: Object.keys(savedAlbumDetails).length,
+                    recentlyViewed: recentlyViewed.length,
+                    customArtwork: Object.keys(customArtworkByAlbumKey).length,
+                    rollingStoneEntries: rollingStoneList.length,
+                  }}
+                  onExportBackup={exportLibraryBackup}
+                  onImportBackup={importLibraryBackup}
+                  onClearRecentlyViewed={clearRecentlyViewedHistory}
+                  onClearRollingStoneTracker={clearRollingStoneTracker}
                 />
               }
             />

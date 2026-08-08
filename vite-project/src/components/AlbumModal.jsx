@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getArtworkUrl } from "../services/artworkService";
+import { getRelease } from "../services/discogs";
 
 const MAX_CUSTOM_ARTWORK_DIMENSION = 800;
 const CUSTOM_ARTWORK_QUALITY = 0.78;
@@ -22,7 +22,8 @@ function AlbumModal({
   const [rating, setRating] = useState(albumData.rating || 5);
   const [saveMessage, setSaveMessage] = useState("");
   const [uploadMessage, setUploadMessage] = useState("");
-  const [artworkUrl, setArtworkUrl] = useState(null);
+  const [artworkUrls, setArtworkUrls] = useState({ front: null, rear: null });
+  const [artworkSide, setArtworkSide] = useState("front");
   const [isArtworkResolved, setIsArtworkResolved] = useState(false);
   const artworkInputRef = useRef(null);
 
@@ -32,6 +33,7 @@ function AlbumModal({
     setRating(albumData.rating || 5);
     setSaveMessage("");
     setUploadMessage("");
+    setArtworkSide("front");
   }, [album]);
 
   useEffect(() => {
@@ -43,14 +45,14 @@ function AlbumModal({
       const hasExistingArtwork = Boolean(existingArtworkUrl);
 
       if (!isCanceled) {
-        setArtworkUrl(existingArtworkUrl);
+        setArtworkUrls({ front: existingArtworkUrl, rear: null });
         setIsArtworkResolved(hasExistingArtwork);
       }
 
       if (!releaseId) {
         if (!isCanceled) {
           if (!hasExistingArtwork) {
-            setArtworkUrl(null);
+            setArtworkUrls({ front: null, rear: null });
           }
           setIsArtworkResolved(true);
         }
@@ -59,23 +61,24 @@ function AlbumModal({
 
       try {
         console.log("AlbumModal release_id:", releaseId);
-        const nextArtworkUrl = await getArtworkUrl(releaseId, {
+        const releaseData = await getRelease(releaseId, {
           artist: albumData.Artist,
           title: albumData.Title,
           year: releaseYear,
-        }, { preferLarge: true });
-        console.log("Artwork URL:", nextArtworkUrl);
+        });
+
+        const nextFrontArtworkUrl = releaseData?.image || releaseData?.thumb || null;
+        const nextRearArtworkUrl = releaseData?.rearImage || null;
 
         if (!isCanceled) {
-          if (nextArtworkUrl) {
-            setArtworkUrl(nextArtworkUrl);
-          } else if (!hasExistingArtwork) {
-            setArtworkUrl(null);
-          }
+          setArtworkUrls({
+            front: nextFrontArtworkUrl || existingArtworkUrl || null,
+            rear: nextRearArtworkUrl,
+          });
         }
       } catch {
         if (!isCanceled && !hasExistingArtwork) {
-          setArtworkUrl(null);
+          setArtworkUrls({ front: null, rear: null });
         }
       } finally {
         if (!isCanceled) {
@@ -207,7 +210,10 @@ function AlbumModal({
       }
 
       onCustomArtworkUpload?.(album, artworkDataUrl);
-      setArtworkUrl(artworkDataUrl);
+      setArtworkUrls((currentArtworkUrls) => ({
+        ...currentArtworkUrls,
+        front: artworkDataUrl,
+      }));
       setIsArtworkResolved(true);
       setUploadMessage("Custom artwork applied (optimized for performance).");
     } catch {
@@ -221,6 +227,10 @@ function AlbumModal({
   }
 
   const genre = albumData.genres || albumData.genre || "";
+  const activeArtworkUrl = artworkSide === "rear" && artworkUrls.rear
+    ? artworkUrls.rear
+    : artworkUrls.front;
+  const hasRearArtwork = Boolean(artworkUrls.rear);
 
   return (
     <div className="album-modal" onClick={onClose}>
@@ -254,10 +264,12 @@ function AlbumModal({
               className="album-modal__artwork-input"
               onChange={handleArtworkUpload}
             />
-            {artworkUrl ? (
+            {activeArtworkUrl ? (
               <img
-                src={artworkUrl}
-                alt={albumData.Title || albumData.title || "Album artwork"}
+                src={activeArtworkUrl}
+                alt={artworkSide === "rear"
+                  ? `${albumData.Title || albumData.title || "Album"} rear artwork`
+                  : albumData.Title || albumData.title || "Album artwork"}
                 className="album-modal__image"
               />
             ) : !isArtworkResolved && artworkStatus === "loading" ? (
@@ -273,6 +285,27 @@ function AlbumModal({
             )}
           </div>
           <p className="album-modal__artwork-hint">Double-click cover art to upload your own image.</p>
+
+          {hasRearArtwork ? (
+            <div className="album-modal__artwork-toggle" aria-label="Artwork side toggle">
+              <button
+                type="button"
+                className={`album-modal__artwork-toggle-button${artworkSide === "front" ? " is-active" : ""}`}
+                onClick={() => setArtworkSide("front")}
+                aria-pressed={artworkSide === "front"}
+              >
+                Front
+              </button>
+              <button
+                type="button"
+                className={`album-modal__artwork-toggle-button${artworkSide === "rear" ? " is-active" : ""}`}
+                onClick={() => setArtworkSide("rear")}
+                aria-pressed={artworkSide === "rear"}
+              >
+                Rear
+              </button>
+            </div>
+          ) : null}
 
           <div className="album-modal__content">
             <p className="album-modal__eyebrow">

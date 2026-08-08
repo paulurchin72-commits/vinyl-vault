@@ -51,6 +51,7 @@ function getPersistentReleaseDetails(releaseId) {
       year: parsedValue.year || "",
       thumb: parsedValue.thumb || null,
       image: parsedValue.image || parsedValue.thumb || null,
+      rearImage: parsedValue.rearImage || null,
       label: parsedValue.label || "",
       genres: parsedValue.genres || "",
     };
@@ -72,6 +73,7 @@ function setPersistentReleaseDetails(releaseId, releaseDetails) {
         year: releaseDetails.year || "",
         thumb: releaseDetails.thumb || null,
         image: releaseDetails.image || releaseDetails.thumb || null,
+        rearImage: releaseDetails.rearImage || null,
         label: releaseDetails.label || "",
         genres: releaseDetails.genres || "",
       })
@@ -87,6 +89,7 @@ function buildItunesFallbackResult(fallbackArtworkUrl, fallbackContext) {
     year: fallbackContext?.year || "",
     thumb: fallbackArtworkUrl,
     image: fallbackArtworkUrl,
+    rearImage: null,
     label: "",
     genres: "",
   };
@@ -558,9 +561,12 @@ export async function getRelease(releaseId, fallbackContext = null) {
   const request = requestReleaseWithRetry(normalizedReleaseId)
     .then((response) => response.json())
     .then(async (data) => {
-      const primaryImage = data.images && data.images.length > 0 ? data.images[0] : null;
+      const images = Array.isArray(data.images) ? data.images : [];
+      const primaryImage = images.find((entry) => entry?.type === "primary") || images[0] || null;
+      const secondaryImage = images.find((entry) => entry && entry !== primaryImage) || null;
       let thumb = primaryImage?.uri150 || data.thumb || primaryImage?.uri || null;
       const image = primaryImage?.uri || thumb || null;
+      const rearImage = secondaryImage?.uri || secondaryImage?.uri150 || null;
 
       if (!thumb) {
         thumb = await resolveFallbackArtworkUrl(fallbackContext);
@@ -571,6 +577,7 @@ export async function getRelease(releaseId, fallbackContext = null) {
         year: data.year,
         thumb,
         image: image || thumb || null,
+        rearImage,
         label:
           data.labels && data.labels.length > 0
             ? data.labels[0].name
@@ -584,7 +591,7 @@ export async function getRelease(releaseId, fallbackContext = null) {
       preloadArtworkImage(thumb);
 
       releaseDataById.set(normalizedReleaseId, releaseDetails);
-  setPersistentReleaseDetails(normalizedReleaseId, releaseDetails);
+    setPersistentReleaseDetails(normalizedReleaseId, releaseDetails);
 
       const traceStore = getTraceStore();
       if (
