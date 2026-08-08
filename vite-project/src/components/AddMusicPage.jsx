@@ -5,6 +5,7 @@ function AddMusicPage({ onAddRecord }) {
   const [barcode, setBarcode] = useState("");
   const [albumQuery, setAlbumQuery] = useState("");
   const [artistQuery, setArtistQuery] = useState("");
+  const [releaseIdQuery, setReleaseIdQuery] = useState("");
   const [results, setResults] = useState([]);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
@@ -21,13 +22,14 @@ function AddMusicPage({ onAddRecord }) {
         barcode: overrides.barcode ?? barcode,
         query: overrides.albumQuery ?? albumQuery,
         artist: overrides.artistQuery ?? artistQuery,
+        releaseId: overrides.releaseIdQuery ?? releaseIdQuery,
       });
 
       setResults(nextResults);
       setStatus("success");
 
       if (!nextResults.length) {
-        setError("No matching release was found. Try another barcode, title, or artist.");
+        setError("No matching release was found. Try another barcode, title, artist, or release ID.");
       }
     } catch (nextError) {
       setResults([]);
@@ -84,7 +86,7 @@ function AddMusicPage({ onAddRecord }) {
         </div>
 
         <p className="add-music-page__copy">
-          Scan a barcode photo or search by album title and artist, then add it to your collection.
+          Scan a barcode photo or search by album title, artist, or Discogs release number, then add it to your collection.
         </p>
 
         <div className="add-music-page__form-grid">
@@ -101,6 +103,11 @@ function AddMusicPage({ onAddRecord }) {
           <label className="add-music-page__field">
             <span>Artist</span>
             <input value={artistQuery} onChange={(event) => setArtistQuery(event.target.value)} placeholder="e.g. Adele" />
+          </label>
+
+          <label className="add-music-page__field">
+            <span>Discogs Release ID</span>
+            <input value={releaseIdQuery} onChange={(event) => setReleaseIdQuery(event.target.value)} placeholder="e.g. 14987088" />
           </label>
 
         </div>
@@ -139,6 +146,7 @@ function AddMusicPage({ onAddRecord }) {
                   <p className="add-music-page__result-artist">{candidate.Artist}</p>
                   <h3 className="add-music-page__result-title">{candidate.Title}</h3>
                   <p className="add-music-page__result-meta">{candidate.Released} {candidate.Label ? `• ${candidate.Label}` : ""}</p>
+                  <p className="add-music-page__result-meta">Release ID: {candidate.release_id}</p>
                   <button type="button" className="collection-button" onClick={() => handleAdd(candidate)}>
                     Add To Collection
                   </button>
