@@ -8,7 +8,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'icons.svg', 'pwa-192.png', 'pwa-512.png'],
+      includeAssets: ['favicon.svg', 'icons.svg', 'mm-pwa-192-v2.png', 'mm-pwa-512-v2.png'],
       manifest: {
         name: 'Music and Memories',
         short_name: 'MusicMemories',
@@ -21,13 +21,13 @@ export default defineConfig({
         scope: '/',
         icons: [
           {
-            src: '/pwa-192.png',
+            src: '/mm-pwa-192-v2.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any',
           },
           {
-            src: '/pwa-512.png',
+            src: '/mm-pwa-512-v2.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable',
