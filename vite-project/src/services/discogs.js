@@ -46,6 +46,11 @@ function getPersistentReleaseDetails(releaseId) {
       return null;
     }
 
+    // Force a one-time refresh for legacy cache entries created before rear artwork support.
+    if (!Object.prototype.hasOwnProperty.call(parsedValue, "rearImage")) {
+      return null;
+    }
+
     return {
       title: parsedValue.title || "",
       year: parsedValue.year || "",
