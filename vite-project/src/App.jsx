@@ -494,6 +494,7 @@ function App() {
   function getArtworkEntry(record) {
     const albumKey = getAlbumKey(record);
     const customArtworkUrl = customArtworkByAlbumKey[albumKey] || null;
+    const embeddedArtworkUrl = record.cover || record.thumb || null;
 
     if (customArtworkUrl) {
       return {
@@ -509,6 +510,14 @@ function App() {
       coverUrl: null,
       releaseData: null,
     };
+
+    if (entry.status === "idle" && !entry.coverUrl && embeddedArtworkUrl) {
+      return {
+        ...entry,
+        status: "loaded",
+        coverUrl: embeddedArtworkUrl,
+      };
+    }
 
     const traceStore = getTraceStore();
     if (isTracedAlbumKey(traceStore, albumKey)) {
@@ -575,6 +584,11 @@ function App() {
       return;
     }
 
+    // Skip network work when artwork already exists in the base record payload.
+    if (record.cover || record.thumb || customArtworkByAlbumKey[albumKey]) {
+      return;
+    }
+
     const request = artworkManager.ensureAlbumArtwork(albumWithKey, getRelease);
     refreshArtworkEntries();
 
@@ -611,7 +625,7 @@ function App() {
     return {
       ...record,
       ...savedAlbum,
-      cover: artworkEntry.coverUrl,
+      cover: artworkEntry.coverUrl || record.cover || record.thumb || null,
       artworkStatus: artworkEntry.status,
       year: artworkEntry.releaseData?.year || record.Released,
       label: artworkEntry.releaseData?.label || record.Label || "",

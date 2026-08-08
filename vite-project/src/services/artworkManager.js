@@ -20,7 +20,7 @@ function createArtworkManager() {
   const objectUrlCache = new Map();
   const maxObjectUrls = 180;
   const syncQueue = [];
-  const maxConcurrentSyncs = 1;
+  const maxConcurrentSyncs = 2;
   let activeSyncs = 0;
 
   function touchObjectUrl(releaseId, objectUrl) {

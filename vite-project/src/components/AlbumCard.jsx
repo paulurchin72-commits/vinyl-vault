@@ -66,7 +66,7 @@ function AlbumCard({
         observer.disconnect();
       },
       {
-        rootMargin: "160px 0px",
+        rootMargin: "480px 0px",
         threshold: 0.01,
       }
     );
@@ -99,7 +99,7 @@ function AlbumCard({
       return undefined;
     }
 
-    const retryDelayMs = 2800 + retryCountRef.current * 1200;
+    const retryDelayMs = 1400 + retryCountRef.current * 800;
     const retryTimerId = window.setTimeout(() => {
       hasTriggeredVisibility.current = false;
       retryCountRef.current += 1;
