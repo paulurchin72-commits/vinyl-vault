@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Music and Memories app icon">
+  <rect width="512" height="512" rx="112" fill="#090909"/>
+  <text
+    x="256"
+    y="292"
+    text-anchor="middle"
+    fill="#F5C542"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-size="168"
+    font-weight="700"
+    letter-spacing="-10"
+  >M&amp;M</text>
+</svg>
