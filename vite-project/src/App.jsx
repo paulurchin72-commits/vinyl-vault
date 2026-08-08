@@ -439,6 +439,27 @@ function App() {
   }, []);
 
   useEffect(() => {
+    function handleDocumentNavigationClick(event) {
+      const link = event.target?.closest?.("a[href]");
+      if (!link) {
+        return;
+      }
+
+      const href = link.getAttribute("href") || "";
+      if (!href.startsWith("/")) {
+        return;
+      }
+
+      setSelectedAlbum(null);
+    }
+
+    document.addEventListener("click", handleDocumentNavigationClick, true);
+    return () => {
+      document.removeEventListener("click", handleDocumentNavigationClick, true);
+    };
+  }, []);
+
+  useEffect(() => {
     setSelectedAlbum(null);
   }, [location.pathname]);
 
