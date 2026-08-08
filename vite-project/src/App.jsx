@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Navigate, NavLink, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import Papa from "papaparse";
 import { getRelease } from "./services/discogs";
 import artworkManager from "./services/artworkManager";
@@ -407,6 +407,7 @@ function isTransientArtworkError(errorMessage) {
 
 function App() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [baseRecords, setBaseRecords] = useState([]);
   const [addedRecords, setAddedRecords] = useState(() => loadAddedRecords());
   const [search, setSearch] = useState("");
@@ -436,6 +437,10 @@ function App() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  useEffect(() => {
+    setSelectedAlbum(null);
+  }, [location.pathname]);
 
   useEffect(() => {
     Papa.parse("/Pault99-collection-20260803-1505.csv", {
@@ -1054,6 +1059,10 @@ function App() {
 
   function closeArtistView() {
     navigate("/artists");
+  }
+
+  function dismissAlbumModalForNavigation() {
+    setSelectedAlbum(null);
   }
 
   async function surpriseMe() {
@@ -2092,6 +2101,7 @@ function App() {
                 <li key={item.to}>
                   <NavLink
                     to={item.to}
+                    onClick={dismissAlbumModalForNavigation}
                     className={({ isActive }) => `app-nav__button${isActive ? " is-active" : ""}`}
                   >
                     {item.label}
@@ -2158,6 +2168,7 @@ function App() {
               <NavLink
                 key={item.to}
                 to={item.to}
+                onClick={dismissAlbumModalForNavigation}
                 className={({ isActive }) =>
                   `app-nav__button app-nav__button--mobile${isActive ? " is-active" : ""}`
                 }
