@@ -40,18 +40,18 @@ function AlbumModal({
     async function loadArtworkUrl() {
       const releaseId = album?.release_id;
       const existingArtworkUrl = albumData.cover || albumData.thumb || null;
+      const hasExistingArtwork = Boolean(existingArtworkUrl);
 
-      if (existingArtworkUrl) {
-        if (!isCanceled) {
-          setArtworkUrl(existingArtworkUrl);
-          setIsArtworkResolved(true);
-        }
-        return;
+      if (!isCanceled) {
+        setArtworkUrl(existingArtworkUrl);
+        setIsArtworkResolved(hasExistingArtwork);
       }
 
       if (!releaseId) {
         if (!isCanceled) {
-          setArtworkUrl(null);
+          if (!hasExistingArtwork) {
+            setArtworkUrl(null);
+          }
           setIsArtworkResolved(true);
         }
         return;
@@ -67,10 +67,14 @@ function AlbumModal({
         console.log("Artwork URL:", nextArtworkUrl);
 
         if (!isCanceled) {
-          setArtworkUrl(nextArtworkUrl);
+          if (nextArtworkUrl) {
+            setArtworkUrl(nextArtworkUrl);
+          } else if (!hasExistingArtwork) {
+            setArtworkUrl(null);
+          }
         }
       } catch {
-        if (!isCanceled) {
+        if (!isCanceled && !hasExistingArtwork) {
           setArtworkUrl(null);
         }
       } finally {
@@ -80,14 +84,12 @@ function AlbumModal({
       }
     }
 
-    setArtworkUrl(null);
-    setIsArtworkResolved(false);
     loadArtworkUrl();
 
     return () => {
       isCanceled = true;
     };
-  }, [album?.release_id]);
+  }, [album?.release_id, albumData.cover, albumData.thumb, albumData.Artist, albumData.Title, releaseYear]);
 
   if (!album) return null;
 
