@@ -1128,6 +1128,7 @@ function App() {
     setSelectedAlbum({
       ...mergeAlbumWithArtwork(record, savedDetails, artworkEntry),
       albumKey,
+      __openPathname: location.pathname,
     });
 
     setRecentlyViewed((currentAlbums) => {
@@ -2204,14 +2205,18 @@ function App() {
           </nav>
 
           <AlbumModal
-            album={selectedAlbum}
+            album={selectedAlbum && selectedAlbum.__openPathname === location.pathname ? selectedAlbum : null}
             onClose={closeAlbum}
             onSave={saveAlbumDetails}
             onMetadataChange={saveAlbumMetadata}
             onArtistClick={openArtistView}
             onCustomArtworkUpload={saveCustomArtwork}
             onCustomArtworkRemove={clearCustomArtwork}
-            hasCustomArtwork={Boolean(selectedAlbum && customArtworkByAlbumKey[selectedAlbum.albumKey])}
+            hasCustomArtwork={Boolean(
+              selectedAlbum
+              && selectedAlbum.__openPathname === location.pathname
+              && customArtworkByAlbumKey[selectedAlbum.albumKey]
+            )}
           />
         </div>
       </div>
