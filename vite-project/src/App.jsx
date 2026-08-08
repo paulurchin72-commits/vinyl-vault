@@ -434,28 +434,32 @@ function App() {
       setSelectedAlbum((currentAlbum) => (currentAlbum ? null : currentAlbum));
     }
 
+    const originalPushState = window.history.pushState.bind(window.history);
+    const originalReplaceState = window.history.replaceState.bind(window.history);
+
+    window.history.pushState = (state, title, url) => {
+      const isModalState = Boolean(state && typeof state === "object" && state.__mmAlbumModal);
+      if (!isModalState) {
+        setSelectedAlbum(null);
+      }
+
+      return originalPushState(state, title, url);
+    };
+
+    window.history.replaceState = (state, title, url) => {
+      const isModalState = Boolean(state && typeof state === "object" && state.__mmAlbumModal);
+      if (!isModalState) {
+        setSelectedAlbum(null);
+      }
+
+      return originalReplaceState(state, title, url);
+    };
+
     window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-  }, []);
-
-  useEffect(() => {
-    function handleDocumentNavigationClick(event) {
-      const link = event.target?.closest?.("a[href]");
-      if (!link) {
-        return;
-      }
-
-      const href = link.getAttribute("href") || "";
-      if (!href.startsWith("/")) {
-        return;
-      }
-
-      setSelectedAlbum(null);
-    }
-
-    document.addEventListener("click", handleDocumentNavigationClick, true);
     return () => {
-      document.removeEventListener("click", handleDocumentNavigationClick, true);
+      window.removeEventListener("popstate", handlePopState);
+      window.history.pushState = originalPushState;
+      window.history.replaceState = originalReplaceState;
     };
   }, []);
 
