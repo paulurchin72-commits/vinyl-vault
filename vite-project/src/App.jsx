@@ -671,6 +671,12 @@ function App() {
   const [worthRankedAlbums, setWorthRankedAlbums] = useState([]);
   const [worthDetailsOpen, setWorthDetailsOpen] = useState(false);
   const [worthLoading, setWorthLoading] = useState(false);
+  const [worthRefreshProgress, setWorthRefreshProgress] = useState({
+    active: false,
+    processed: 0,
+    total: 0,
+    mode: "batch",
+  });
   const [worthByRelease, setWorthByRelease] = useState(() =>
     normalizeWorthByRelease(loadStoredJson(WORTH_BY_RELEASE_KEY, {}))
   );
@@ -1104,7 +1110,7 @@ function App() {
   }
 
   async function loadCollectionWorthEstimate(options = {}) {
-    const { refresh = true } = options;
+    const { refresh = true, forceAll = false } = options;
     const worthStoreSnapshot = worthByReleaseRef.current;
     const releaseIdToContext = new Map();
     const releaseIdToRecord = new Map();
@@ -1147,7 +1153,9 @@ function App() {
     }
 
     const now = Date.now();
-    const refreshReleaseIds = releaseIds
+    const refreshReleaseIds = forceAll
+      ? releaseIds
+      : releaseIds
       .map((releaseId) => ({
         releaseId,
         updatedAt: Number(worthStoreSnapshot[releaseId]?.updatedAt) || 0,
@@ -1171,6 +1179,12 @@ function App() {
 
     worthRefreshInFlightRef.current = true;
     setWorthLoading(true);
+    setWorthRefreshProgress({
+      active: true,
+      processed: 0,
+      total: refreshReleaseIds.length,
+      mode: forceAll ? "full" : "batch",
+    });
 
     try {
       const nextWorthByRelease = {
@@ -1187,7 +1201,17 @@ function App() {
         );
 
         results.forEach((result, resultIndex) => {
+          const releaseId = chunk[resultIndex] || null;
+          if (!releaseId) {
+            return;
+          }
+
           if (result.status !== "fulfilled") {
+            nextWorthByRelease[releaseId] = {
+              value: null,
+              currency: "USD",
+              updatedAt: Date.now(),
+            };
             return;
           }
 
@@ -1209,6 +1233,11 @@ function App() {
             updatedAt: Date.now(),
           };
         });
+
+        setWorthRefreshProgress((currentProgress) => ({
+          ...currentProgress,
+          processed: Math.min(currentProgress.total, index + chunk.length),
+        }));
       }
 
       setWorthByRelease(nextWorthByRelease);
@@ -1227,6 +1256,10 @@ function App() {
     } finally {
       worthRefreshInFlightRef.current = false;
       setWorthLoading(false);
+      setWorthRefreshProgress((currentProgress) => ({
+        ...currentProgress,
+        active: false,
+      }));
     }
   }
 
@@ -2121,6 +2154,7 @@ function App() {
       : collectionWorthEstimate.sampled
         ? `From ${collectionWorthEstimate.sampled}/${collectionWorthEstimate.sampleSize} priced releases • updated ${formatLastUpdatedLabel(worthLastUpdatedAt)}`
         : "No Discogs price data yet";
+    const worthCoverageLabel = `${collectionWorthEstimate.sampled}/${collectionWorthEstimate.sampleSize} priced`;
 
     const memoryCount = Object.values(savedAlbumDetails).filter((entry) => entry?.memory?.trim()).length;
     const dashboardStats = [
@@ -2244,7 +2278,15 @@ function App() {
                   onClick={() => void loadCollectionWorthEstimate({ refresh: true })}
                   disabled={worthLoading}
                 >
-                  {worthLoading ? "Refreshing…" : "Refresh prices"}
+                  {worthLoading ? "Refreshing…" : "Refresh batch"}
+                </button>
+                <button
+                  type="button"
+                  className="surprise-button"
+                  onClick={() => void loadCollectionWorthEstimate({ refresh: true, forceAll: true })}
+                  disabled={worthLoading}
+                >
+                  {worthLoading ? "Working…" : "Full reprice all"}
                 </button>
               </div>
 
@@ -2253,6 +2295,18 @@ function App() {
                   ? `Estimated total: ${formatWorthInGbp(displayedWorthTotal, displayedWorthCurrency)}`
                   : "No priced albums found yet."}
               </p>
+
+              <p className="worth-details-meta">
+                {worthCoverageLabel}
+                {worthLastUpdatedAt ? ` • updated ${formatLastUpdatedLabel(worthLastUpdatedAt)}` : ""}
+              </p>
+
+              {worthRefreshProgress.active ? (
+                <p className="worth-details-progress">
+                  {worthRefreshProgress.mode === "full" ? "Full reprice" : "Batch refresh"}
+                  {`: ${worthRefreshProgress.processed}/${worthRefreshProgress.total}`}
+                </p>
+              ) : null}
 
               {worthLoading ? (
                 <p className="worth-details-empty">Loading Discogs values…</p>

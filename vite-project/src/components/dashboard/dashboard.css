@@ -472,7 +472,22 @@
 .worth-details-toolbar {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
   margin: 0 0 10px;
+}
+
+.worth-details-meta {
+  margin: 0 0 10px;
+  color: rgba(255, 243, 226, 0.72);
+  font-size: 13px;
+}
+
+.worth-details-progress {
+  margin: 0 0 12px;
+  color: rgba(245, 197, 66, 0.9);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .worth-details-list {
