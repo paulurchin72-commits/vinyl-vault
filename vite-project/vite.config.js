@@ -10,14 +10,15 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icons.svg', 'mm-pwa-192-v3.png', 'mm-pwa-512-v3.png'],
       manifest: {
+        id: '/?app=mm2',
         name: 'Music and Memories',
-        short_name: 'MusicMemories',
+        short_name: 'MusicMemories2',
         description: 'Browse your vinyl collection with artwork, memories, and discovery tools.',
         theme_color: '#121212',
         background_color: '#090909',
         display: 'standalone',
         orientation: 'portrait',
-        start_url: '/',
+        start_url: '/?app=mm2',
         scope: '/',
         icons: [
           {
