@@ -307,6 +307,89 @@ function parseTracklist(data) {
     .filter(Boolean);
 }
 
+function scoreArtistSearchMatch(candidateArtist, normalizedArtistSearch) {
+  if (!normalizedArtistSearch) {
+    return 0;
+  }
+
+  const normalizedCandidateArtist = normalizeSearchText(candidateArtist);
+
+  if (!normalizedCandidateArtist) {
+    return 0;
+  }
+
+  if (normalizedCandidateArtist === normalizedArtistSearch) {
+    return 5;
+  }
+
+  if (normalizedCandidateArtist.startsWith(`${normalizedArtistSearch} `)) {
+    return 4;
+  }
+
+  if (normalizedCandidateArtist.startsWith(normalizedArtistSearch)) {
+    return 3;
+  }
+
+  if (normalizedCandidateArtist.includes(` ${normalizedArtistSearch} `)) {
+    return 2;
+  }
+
+  if (normalizedCandidateArtist.includes(normalizedArtistSearch)) {
+    return 1;
+  }
+
+  return 0;
+}
+
+function mapArtistOnlyCandidate(candidate, fallbackArtist) {
+  return {
+    release_id: candidate.release_id,
+    artist: candidate.Artist || fallbackArtist || "Unknown Artist",
+    album: candidate.Title || "Unknown Album",
+    year: candidate.Released || "Unknown",
+    label: candidate.Label || "",
+    matchedTrack: "",
+    thumb: candidate.thumb || null,
+    cover: candidate.cover || candidate.thumb || null,
+  };
+}
+
+async function searchDiscogsArtistOnly(normalizedArtist, normalizedArtistSearch) {
+  const params = new URLSearchParams({
+    type: "release",
+    per_page: "30",
+    q: normalizedArtist,
+  });
+
+  const data = await requestDiscogsJson(`https://api.discogs.com/database/search?${params.toString()}`);
+  const candidates = (Array.isArray(data?.results) ? data.results : [])
+    .map(buildSearchCandidate)
+    .filter((candidate) => candidate.release_id)
+    .filter((candidate, index, list) => list.findIndex((entry) => entry.release_id === candidate.release_id) === index)
+    .map((candidate) => ({
+      candidate,
+      artistScore: scoreArtistSearchMatch(candidate.Artist, normalizedArtistSearch),
+    }))
+    .filter((entry) => entry.artistScore > 0)
+    .sort((firstEntry, secondEntry) => {
+      if (secondEntry.artistScore !== firstEntry.artistScore) {
+        return secondEntry.artistScore - firstEntry.artistScore;
+      }
+
+      const firstYear = Number(firstEntry.candidate.Released) || 0;
+      const secondYear = Number(secondEntry.candidate.Released) || 0;
+      if (secondYear !== firstYear) {
+        return secondYear - firstYear;
+      }
+
+      return String(firstEntry.candidate.Title || "").localeCompare(String(secondEntry.candidate.Title || ""));
+    })
+    .slice(0, 6)
+    .map(({ candidate }) => mapArtistOnlyCandidate(candidate, normalizedArtist));
+
+  return candidates;
+}
+
 async function getReleaseTrackSearchData(releaseId) {
   const normalizedReleaseId = normalizeReleaseId(releaseId);
   if (!normalizedReleaseId) {
@@ -352,17 +435,13 @@ export async function searchDiscogsTracks({ artist = "", track = "" }) {
   }
 
   if (normalizedArtist && !normalizedTrack) {
+    const broadMatches = await searchDiscogsArtistOnly(normalizedArtist, normalizedArtistSearch);
+    if (broadMatches.length) {
+      return broadMatches;
+    }
+
     const releaseMatches = await searchDiscogsReleases({ artist: normalizedArtist, query: "", barcode: "", releaseId: "" });
-    return releaseMatches.slice(0, 6).map((candidate) => ({
-      release_id: candidate.release_id,
-      artist: candidate.Artist || normalizedArtist || "Unknown Artist",
-      album: candidate.Title || "Unknown Album",
-      year: candidate.Released || "Unknown",
-      label: candidate.Label || "",
-      matchedTrack: "",
-      thumb: candidate.thumb || null,
-      cover: candidate.cover || candidate.thumb || null,
-    }));
+    return releaseMatches.slice(0, 6).map((candidate) => mapArtistOnlyCandidate(candidate, normalizedArtist));
   }
 
   const params = new URLSearchParams({
