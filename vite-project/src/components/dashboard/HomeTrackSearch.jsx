@@ -11,9 +11,10 @@ function HomeTrackSearch({ onOpenAlbum }) {
   async function handleSubmit(event) {
     event.preventDefault();
 
+    const normalizedArtist = artistQuery.trim();
     const normalizedTrackTitle = trackTitleQuery.trim();
-    if (!normalizedTrackTitle) {
-      setError("Enter a song title to run a deep search.");
+    if (!normalizedArtist && !normalizedTrackTitle) {
+      setError("Enter an artist or song title to run a deep search.");
       setResults([]);
       setStatus("error");
       return;
@@ -24,7 +25,7 @@ function HomeTrackSearch({ onOpenAlbum }) {
 
     try {
       const matches = await searchDiscogsTracks({
-        artist: artistQuery,
+        artist: normalizedArtist,
         track: normalizedTrackTitle,
       });
 
@@ -32,7 +33,7 @@ function HomeTrackSearch({ onOpenAlbum }) {
       setStatus("success");
 
       if (!matches.length) {
-        setError("No album match found for that artist/song combination.");
+        setError("No album match found for that search.");
       }
     } catch (nextError) {
       setResults([]);
@@ -86,7 +87,7 @@ function HomeTrackSearch({ onOpenAlbum }) {
           id="home-search-track"
           type="search"
           className="dashboard-home-search__input"
-          placeholder="Song title"
+          placeholder="Song title (optional)"
           value={trackTitleQuery}
           onChange={(event) => setTrackTitleQuery(event.target.value)}
         />
@@ -99,9 +100,11 @@ function HomeTrackSearch({ onOpenAlbum }) {
       {results.length ? (
         <ul className="dashboard-track-search-results__list">
           {results.map((result) => (
-            <li key={`${result.release_id}-${result.matchedTrack}`} className="dashboard-track-search-results__item">
+            <li key={`${result.release_id}-${result.matchedTrack || "artist"}`} className="dashboard-track-search-results__item">
               <div className="dashboard-track-search-results__meta">
-                <p className="dashboard-track-search-results__track">{result.matchedTrack}</p>
+                {result.matchedTrack ? (
+                  <p className="dashboard-track-search-results__track">{result.matchedTrack}</p>
+                ) : null}
                 <p className="dashboard-track-search-results__album">{result.album}</p>
                 <p className="dashboard-track-search-results__artist">
                   {result.artist}
