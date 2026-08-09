@@ -1,15 +1,21 @@
 import { useRef, useState } from "react";
 
 function SettingsPage({
+  manualCollectionWorth,
   backupSummary,
   onExportBackup,
   onImportBackup,
+  onSaveManualCollectionWorth,
+  onClearManualCollectionWorth,
   onClearRecentlyViewed,
   onClearRollingStoneTracker,
   onForceRefreshApp,
 }) {
   const importInputRef = useRef(null);
   const [statusMessage, setStatusMessage] = useState("");
+  const [collectionWorthInput, setCollectionWorthInput] = useState(
+    manualCollectionWorth?.amount ? String(Math.round(manualCollectionWorth.amount)) : ""
+  );
 
   const summaryItems = [
     { label: "Added records", value: backupSummary?.addedRecords ?? 0 },
@@ -54,6 +60,21 @@ function SettingsPage({
   function handleClearRollingStoneTracker() {
     const message = onClearRollingStoneTracker?.();
     setStatusMessage(message || "Rolling Stone tracker cleared.");
+  }
+
+  function handleSaveManualWorth() {
+    try {
+      const message = onSaveManualCollectionWorth?.(collectionWorthInput, "GBP");
+      setStatusMessage(message || "Manual Discogs worth saved.");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Unable to save Discogs worth right now.");
+    }
+  }
+
+  function handleClearManualWorth() {
+    const message = onClearManualCollectionWorth?.();
+    setCollectionWorthInput("");
+    setStatusMessage(message || "Manual Discogs worth cleared.");
   }
 
   async function handleForceRefreshApp() {
@@ -105,6 +126,43 @@ function SettingsPage({
             className="settings-page__file-input"
             onChange={handleImportBackup}
           />
+        </div>
+      </div>
+
+      <div className="glass-panel settings-page__panel">
+        <h3 className="settings-page__panel-title">Discogs Collection Worth</h3>
+        <p className="settings-page__panel-copy">
+          If Discogs shows a trusted total (for example, £17,000), enter it here and the dashboard worth card will use it.
+        </p>
+
+        <label className="settings-page__worth-label" htmlFor="discogs-worth-input">
+          Total collection worth (GBP)
+        </label>
+        <input
+          id="discogs-worth-input"
+          type="number"
+          min="0"
+          step="1"
+          inputMode="numeric"
+          className="settings-page__worth-input"
+          placeholder="17000"
+          value={collectionWorthInput}
+          onChange={(event) => setCollectionWorthInput(event.target.value)}
+        />
+
+        {manualCollectionWorth?.amount ? (
+          <p className="settings-page__panel-copy">
+            Current manual value: £{Math.round(manualCollectionWorth.amount).toLocaleString("en-GB")}
+          </p>
+        ) : null}
+
+        <div className="settings-page__actions">
+          <button type="button" className="album-modal__button album-modal__button--primary" onClick={handleSaveManualWorth}>
+            Save Worth
+          </button>
+          <button type="button" className="album-modal__button album-modal__button--secondary" onClick={handleClearManualWorth}>
+            Clear Worth
+          </button>
         </div>
       </div>
 

@@ -69,6 +69,7 @@ const RECENTLY_VIEWED_KEY = "the-memory-box:recently-viewed";
 const ADDED_RECORDS_KEY = "the-memory-box:added-records";
 const CUSTOM_ARTWORK_KEY = "the-memory-box:custom-artwork";
 const ROLLING_STONE_LIST_KEY = "the-memory-box:rolling-stone-top-500";
+const MANUAL_COLLECTION_WORTH_KEY = "the-memory-box:manual-collection-worth";
 const ROLLING_STONE_GIST_API = "https://api.github.com/gists/232302a4ba29fd8f5f0d0352ef55d2b9";
 const RECENTLY_VIEWED_LIMIT = 10;
 const LETTER_FILTERS = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ", "0-9", "ALL"];
@@ -98,6 +99,26 @@ function loadStoredJson(key, fallbackValue) {
 
 function loadSavedMemories() {
   return loadStoredJson(SAVED_MEMORIES_KEY, {});
+}
+
+function normalizeManualCollectionWorth(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const amount = Number(value.amount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return null;
+  }
+
+  const currency = String(value.currency || "GBP").toUpperCase();
+  const source = String(value.source || "discogs").toLowerCase();
+
+  return {
+    amount,
+    currency,
+    source,
+  };
 }
 
 function normalizeRecentlyViewedEntries(storedValue) {
@@ -589,6 +610,9 @@ function App() {
   const [worthRankedAlbums, setWorthRankedAlbums] = useState([]);
   const [worthDetailsOpen, setWorthDetailsOpen] = useState(false);
   const [worthLoading, setWorthLoading] = useState(false);
+  const [manualCollectionWorth, setManualCollectionWorth] = useState(() =>
+    normalizeManualCollectionWorth(loadStoredJson(MANUAL_COLLECTION_WORTH_KEY, null))
+  );
   const records = useMemo(() => [...addedRecords, ...baseRecords], [addedRecords, baseRecords]);
   const recentlyViewedAlbumKeys = recentlyViewed.map((entry) => entry.albumKey);
 
@@ -1558,6 +1582,7 @@ function App() {
         recentlyViewed,
         customArtworkByAlbumKey,
         rollingStoneList,
+        manualCollectionWorth,
       },
     };
 
@@ -1593,12 +1618,14 @@ function App() {
     const nextRecentlyViewed = normalizeRecentlyViewedEntries(backupData?.recentlyViewed || []);
     const nextCustomArtwork = normalizeCustomArtworkEntries(backupData?.customArtworkByAlbumKey || {});
     const nextRollingStoneList = normalizeRollingStoneEntries(backupData?.rollingStoneList || []);
+    const nextManualCollectionWorth = normalizeManualCollectionWorth(backupData?.manualCollectionWorth);
 
     setAddedRecords(nextAddedRecords);
     setSavedAlbumDetails(nextSavedAlbumDetails);
     setRecentlyViewed(nextRecentlyViewed);
     setCustomArtworkByAlbumKey(nextCustomArtwork);
     setRollingStoneList(nextRollingStoneList);
+    setManualCollectionWorth(nextManualCollectionWorth);
     setRollingStoneStatus(nextRollingStoneList.length ? `Imported ${nextRollingStoneList.length} tracker entries.` : "");
     setSelectedAlbum(null);
 
@@ -1608,11 +1635,51 @@ function App() {
       localStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify(nextRecentlyViewed));
       localStorage.setItem(CUSTOM_ARTWORK_KEY, JSON.stringify(nextCustomArtwork));
       localStorage.setItem(ROLLING_STONE_LIST_KEY, JSON.stringify(nextRollingStoneList));
+      if (nextManualCollectionWorth) {
+        localStorage.setItem(MANUAL_COLLECTION_WORTH_KEY, JSON.stringify(nextManualCollectionWorth));
+      } else {
+        localStorage.removeItem(MANUAL_COLLECTION_WORTH_KEY);
+      }
     } catch {
       // Keep imported state in memory even if persistence hits a browser quota limit.
     }
 
     return `Imported ${nextAddedRecords.length} added records, ${Object.keys(nextSavedAlbumDetails).length} album notes, and ${Object.keys(nextCustomArtwork).length} custom artwork overrides.`;
+  }
+
+  function saveManualCollectionWorth(amountInput, currencyInput = "GBP") {
+    const amount = Number(amountInput);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error("Enter a collection worth greater than 0.");
+    }
+
+    const nextValue = normalizeManualCollectionWorth({
+      amount,
+      currency: currencyInput,
+      source: "discogs",
+    });
+
+    setManualCollectionWorth(nextValue);
+
+    try {
+      localStorage.setItem(MANUAL_COLLECTION_WORTH_KEY, JSON.stringify(nextValue));
+    } catch {
+      // Keep in-memory value even if localStorage is unavailable.
+    }
+
+    return `Saved manual Discogs worth: ${formatWorthInGbp(nextValue.amount, nextValue.currency)}.`;
+  }
+
+  function clearManualCollectionWorth() {
+    setManualCollectionWorth(null);
+
+    try {
+      localStorage.removeItem(MANUAL_COLLECTION_WORTH_KEY);
+    } catch {
+      // Ignore localStorage failures and keep in-memory reset.
+    }
+
+    return "Manual Discogs worth cleared.";
   }
 
   function clearRecentlyViewedHistory() {
@@ -1892,6 +1959,15 @@ function App() {
       }
     }
 
+    const displayedWorthTotal = manualCollectionWorth?.amount ?? collectionWorthEstimate.total;
+    const displayedWorthCurrency = manualCollectionWorth?.currency || collectionWorthEstimate.currency;
+    const displayedWorthHasValue = Boolean(manualCollectionWorth) || collectionWorthEstimate.sampled > 0;
+    const displayedWorthHint = manualCollectionWorth
+      ? "Manual Discogs worth imported"
+      : collectionWorthEstimate.sampled
+        ? `From ${collectionWorthEstimate.sampled}/${collectionWorthEstimate.sampleSize} priced releases (GBP)`
+        : "No Discogs price data yet";
+
     const memoryCount = Object.values(savedAlbumDetails).filter((entry) => entry?.memory?.trim()).length;
     const dashboardStats = [
       { label: "Albums", value: records.length || 0, hint: "Curated sleeves" },
@@ -1915,12 +1991,10 @@ function App() {
       },
       {
         label: "Discogs Worth",
-        value: collectionWorthEstimate.sampled
-          ? formatWorthInGbp(collectionWorthEstimate.total, collectionWorthEstimate.currency)
+        value: displayedWorthHasValue
+          ? formatWorthInGbp(displayedWorthTotal, displayedWorthCurrency)
           : "N/A",
-        hint: collectionWorthEstimate.sampled
-          ? `From ${collectionWorthEstimate.sampled}/${collectionWorthEstimate.sampleSize} priced releases (GBP)`
-          : "No Discogs price data yet",
+        hint: displayedWorthHint,
         onClick: openWorthDetails,
       },
     ];
@@ -2010,8 +2084,8 @@ function App() {
               </div>
 
               <p className="worth-details-summary">
-                {collectionWorthEstimate.sampled
-                  ? `Estimated total: ${formatWorthInGbp(collectionWorthEstimate.total, collectionWorthEstimate.currency)}`
+                {displayedWorthHasValue
+                  ? `Estimated total: ${formatWorthInGbp(displayedWorthTotal, displayedWorthCurrency)}`
                   : "No priced albums found yet."}
               </p>
 
@@ -2397,6 +2471,7 @@ function App() {
               path="/settings"
               element={
                 <SettingsPage
+                  manualCollectionWorth={manualCollectionWorth}
                   backupSummary={{
                     addedRecords: addedRecords.length,
                     albumNotes: Object.keys(savedAlbumDetails).length,
@@ -2406,6 +2481,8 @@ function App() {
                   }}
                   onExportBackup={exportLibraryBackup}
                   onImportBackup={importLibraryBackup}
+                  onSaveManualCollectionWorth={saveManualCollectionWorth}
+                  onClearManualCollectionWorth={clearManualCollectionWorth}
                   onClearRecentlyViewed={clearRecentlyViewedHistory}
                   onClearRollingStoneTracker={clearRollingStoneTracker}
                   onForceRefreshApp={forceRefreshApp}

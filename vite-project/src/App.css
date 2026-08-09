@@ -1230,6 +1230,30 @@
   display: none;
 }
 
+.settings-page__worth-label {
+  margin: 0;
+  color: rgba(241, 235, 225, 0.86);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-page__worth-input {
+  width: 100%;
+  max-width: 320px;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff8eb;
+  padding: 10px 12px;
+  font-size: 16px;
+}
+
+.settings-page__worth-input:focus-visible {
+  outline: 2px solid rgba(245, 197, 66, 0.8);
+  outline-offset: 2px;
+}
+
 .memories-groups {
   display: grid;
   gap: 12px;
