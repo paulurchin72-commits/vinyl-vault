@@ -1,22 +1,80 @@
 import { useEffect, useMemo, useState } from "react";
-import { Navigate, NavLink, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import Papa from "papaparse";
 import { getRelease } from "./services/discogs";
 import artworkManager from "./services/artworkManager";
 import AlbumCard from "./components/AlbumCard";
+import AddMusicPage from "./components/AddMusicPage";
 import AlbumModal from "./components/AlbumModal";
 import ArtistCollectionView from "./components/ArtistCollectionView";
 import ArtistsDirectoryView from "./components/ArtistsDirectoryView";
+import BottomPlayer from "./components/dashboard/BottomPlayer";
+import CollectionStats from "./components/dashboard/CollectionStats";
+import ContinueListening from "./components/dashboard/ContinueListening";
+import DashboardLayout from "./components/dashboard/DashboardLayout";
+import DuplicateDetectorPage from "./components/DuplicateDetectorPage";
+import HeroSection from "./components/dashboard/HeroSection";
+import HomeTrackSearch from "./components/dashboard/HomeTrackSearch";
+import RandomMemory from "./components/dashboard/RandomMemory";
+import RecentlyAdded from "./components/dashboard/RecentlyAdded";
+import SettingsPage from "./components/SettingsPage";
+import TonightsPick from "./components/dashboard/TonightsPick";
 import PlaceholderPage from "./components/PlaceholderPage";
+import mmMonogramLogo from "./assets/mm-monogram-logo.svg";
 import "./App.css";
+
+function getTraceStore() {
+  if (typeof globalThis === "undefined") {
+    return null;
+  }
+
+  return globalThis;
+}
+
+function logTraceStage(stage, payload, options = {}) {
+  const traceStore = getTraceStore();
+  if (!traceStore) {
+    return;
+  }
+
+  const traceAlbum = traceStore.__MM_TRACE_FIRST_ALBUM__;
+  if (!traceAlbum) {
+    return;
+  }
+
+  if (options.once) {
+    traceStore.__MM_TRACE_ONCE__ ||= {};
+    const onceKey = `${stage}:${traceAlbum.albumKey}`;
+    if (traceStore.__MM_TRACE_ONCE__[onceKey]) {
+      return;
+    }
+    traceStore.__MM_TRACE_ONCE__[onceKey] = true;
+  }
+
+  console.log(`[MM TRACE] ${stage}`, payload);
+}
+
+function isTracedAlbumKey(traceStore, albumKey) {
+  return (
+    traceStore?.__MM_TRACE_FIRST_ALBUM__?.albumKey === albumKey ||
+    traceStore?.__MM_TRACE_SUCCESS_ALBUM__?.albumKey === albumKey
+  );
+}
 
 const SAVED_MEMORIES_KEY = "the-memory-box:saved-memories";
 const RECENTLY_VIEWED_KEY = "the-memory-box:recently-viewed";
+const ADDED_RECORDS_KEY = "the-memory-box:added-records";
+const CUSTOM_ARTWORK_KEY = "the-memory-box:custom-artwork";
+const ROLLING_STONE_LIST_KEY = "the-memory-box:rolling-stone-top-500";
+const ROLLING_STONE_GIST_API = "https://api.github.com/gists/232302a4ba29fd8f5f0d0352ef55d2b9";
 const RECENTLY_VIEWED_LIMIT = 10;
+const LETTER_FILTERS = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ", "0-9", "ALL"];
 const NAV_ITEMS = [
   { to: "/home", label: "🏠 Home" },
   { to: "/collection", label: "📀 Collection" },
+  { to: "/add-music", label: "➕ Add Music" },
   { to: "/artists", label: "🎤 Artists" },
+  { to: "/duplicates", label: "🧬 Duplicates" },
   { to: "/favourites", label: "❤️ Favourites" },
   { to: "/top-rated", label: "⭐ Top Rated" },
   { to: "/insights", label: "📊 Insights" },
@@ -37,9 +95,7 @@ function loadSavedMemories() {
   return loadStoredJson(SAVED_MEMORIES_KEY, {});
 }
 
-function loadRecentlyViewed() {
-  const storedValue = loadStoredJson(RECENTLY_VIEWED_KEY, []);
-
+function normalizeRecentlyViewedEntries(storedValue) {
   if (!Array.isArray(storedValue)) {
     return [];
   }
@@ -49,6 +105,7 @@ function loadRecentlyViewed() {
       if (typeof entry === "string") {
         return {
           albumKey: entry,
+          release_id: null,
           artist: "",
           album: "",
           artwork: null,
@@ -62,6 +119,7 @@ function loadRecentlyViewed() {
 
       return {
         albumKey: entry.albumKey,
+        release_id: entry.release_id || entry.releaseId || null,
         artist: entry.artist || "",
         album: entry.album || "",
         artwork: entry.artwork || null,
@@ -72,26 +130,407 @@ function loadRecentlyViewed() {
     .slice(0, RECENTLY_VIEWED_LIMIT);
 }
 
+function loadRecentlyViewed() {
+  return normalizeRecentlyViewedEntries(loadStoredJson(RECENTLY_VIEWED_KEY, []));
+}
+
+function normalizeAddedRecords(storedValue) {
+  if (!Array.isArray(storedValue)) {
+    return [];
+  }
+
+  return storedValue
+    .filter((record) => record && typeof record === "object" && record.Artist && record.Title)
+    .map((record, index) => ({
+      ...record,
+      __rowIndex: record.__rowIndex ?? `added-${index}`,
+    }));
+}
+
+function loadAddedRecords() {
+  return normalizeAddedRecords(loadStoredJson(ADDED_RECORDS_KEY, []));
+}
+
+function normalizeRollingStoneEntries(storedValue) {
+  if (!Array.isArray(storedValue)) {
+    return [];
+  }
+
+  return storedValue
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+
+      const artist = String(entry.artist || entry.Artist || "").trim();
+      const album = String(entry.album || entry.Album || entry.title || entry.Title || "").trim();
+
+      if (!artist || !album) {
+        return null;
+      }
+
+      return {
+        rank: entry.rank || entry.Rank || "",
+        artist,
+        album,
+      };
+    })
+    .filter(Boolean);
+}
+
+function loadRollingStoneList() {
+  return normalizeRollingStoneEntries(loadStoredJson(ROLLING_STONE_LIST_KEY, []));
+}
+
+function normalizeSavedAlbumDetails(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([albumKey, entry]) => albumKey && entry && typeof entry === "object")
+      .map(([albumKey, entry]) => [
+        albumKey,
+        {
+          memory: typeof entry.memory === "string" ? entry.memory : "",
+          favorite: Boolean(entry.favorite),
+          rating: Number(entry.rating) || 0,
+          artist: typeof entry.artist === "string" ? entry.artist : "",
+          title: typeof entry.title === "string" ? entry.title : "",
+          released: entry.released || "",
+          release_id: normalizeReleaseId(entry.release_id || entry.releaseId),
+        },
+      ])
+  );
+}
+
+function normalizeCustomArtworkEntries(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).filter(([albumKey, artworkUrl]) => albumKey && typeof artworkUrl === "string" && artworkUrl)
+  );
+}
+
+function normalizeMatchText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseAlbumKeyFallback(albumKey) {
+  const rawKey = String(albumKey || "").trim();
+  if (!rawKey) {
+    return {
+      artist: "Unknown Artist",
+      title: "Unknown Album",
+      released: "",
+    };
+  }
+
+  const keyParts = rawKey.split("-");
+  if (keyParts.length >= 3) {
+    const released = keyParts[keyParts.length - 1];
+    const title = keyParts[keyParts.length - 2];
+    const artist = keyParts.slice(0, -2).join("-");
+
+    return {
+      artist: artist || "Unknown Artist",
+      title: title || "Unknown Album",
+      released: released || "",
+    };
+  }
+
+  return {
+    artist: "Unknown Artist",
+    title: rawKey || "Unknown Album",
+    released: "",
+  };
+}
+
+function formatCurrencyAmount(amount, currencyCode = "USD") {
+  if (!Number.isFinite(amount)) {
+    return "N/A";
+  }
+
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currencyCode || "USD",
+      maximumFractionDigits: 0,
+    }).format(amount);
+  } catch {
+    return `${currencyCode || "USD"} ${Math.round(amount).toLocaleString()}`;
+  }
+}
+
+function normalizeRollingStoneRows(rows) {
+  return rows
+    .map((entry) => {
+      const artist = String(entry.artist || entry.Artist || "").trim();
+      const album = String(entry.album || entry.Album || entry.title || entry.Title || "").trim();
+
+      if (!artist || !album) {
+        return null;
+      }
+
+      return {
+        rank: entry.rank || entry.Rank || "",
+        artist,
+        album,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 500);
+}
+
+function parseRollingStoneTable(tableElement) {
+  if (!tableElement) {
+    return [];
+  }
+
+  const rows = Array.from(tableElement.querySelectorAll("tr"));
+  const parsedRows = rows
+    .map((row) => {
+      const cells = Array.from(row.querySelectorAll("th, td"));
+      if (cells.length < 3) {
+        return null;
+      }
+
+      const rank = Number.parseInt((cells[0].textContent || "").replace(/[^0-9]/g, ""), 10);
+      if (!Number.isFinite(rank) || rank < 1 || rank > 500) {
+        return null;
+      }
+
+      const album = String(cells[1].textContent || "").replace(/\s+/g, " ").replace(/^"|"$/g, "").trim();
+      const artist = String(cells[2].textContent || "").replace(/\s+/g, " ").trim();
+
+      if (!album || !artist) {
+        return null;
+      }
+
+      return {
+        rank,
+        artist,
+        album,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.rank - b.rank);
+
+  const dedupedByRank = new Map();
+  parsedRows.forEach((entry) => {
+    if (!dedupedByRank.has(entry.rank)) {
+      dedupedByRank.set(entry.rank, entry);
+    }
+  });
+
+  return Array.from(dedupedByRank.values()).sort((a, b) => a.rank - b.rank);
+}
+
+function parseRollingStoneFromWikipediaHtml(htmlText) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(htmlText, "text/html");
+
+  const headingCandidates = [
+    "2020_revision",
+    "2020_list",
+    "2020",
+  ];
+
+  for (const headingId of headingCandidates) {
+    const heading = doc.getElementById(headingId);
+    if (!heading) {
+      continue;
+    }
+
+    const sectionHeading = heading.closest("h2, h3, h4");
+    let probe = sectionHeading?.nextElementSibling || heading.nextElementSibling;
+    while (probe && probe.tagName !== "TABLE") {
+      probe = probe.nextElementSibling;
+    }
+
+    const sectionRows = [];
+    while (probe) {
+      if (/^H[1-4]$/.test(probe.tagName)) {
+        break;
+      }
+
+      if (probe.tagName === "TABLE") {
+        sectionRows.push(...parseRollingStoneTable(probe));
+      }
+
+      probe = probe.nextElementSibling;
+    }
+
+    const dedupedRows = Array.from(
+      sectionRows.reduce((byRank, entry) => {
+        if (!byRank.has(entry.rank)) {
+          byRank.set(entry.rank, entry);
+        }
+        return byRank;
+      }, new Map()).values()
+    ).sort((a, b) => a.rank - b.rank);
+
+    if (dedupedRows.length >= 300) {
+      return dedupedRows;
+    }
+  }
+
+  const allRows = Array.from(doc.querySelectorAll("table.wikitable")).flatMap((table) =>
+    parseRollingStoneTable(table)
+  );
+
+  const dedupedAllRows = Array.from(
+    allRows.reduce((byRank, entry) => {
+      if (!byRank.has(entry.rank)) {
+        byRank.set(entry.rank, entry);
+      }
+      return byRank;
+    }, new Map()).values()
+  ).sort((a, b) => a.rank - b.rank);
+
+  if (dedupedAllRows.length >= 300) {
+    return dedupedAllRows;
+  }
+
+  return [];
+}
+
+function isLikelyTop500List(rows) {
+  if (!rows.length) {
+    return false;
+  }
+
+  const ranks = new Set(rows.map((entry) => Number(entry.rank)).filter((rank) => Number.isFinite(rank)));
+  return rows.length >= 300 && ranks.has(1) && ranks.size >= 250;
+}
+
+async function fetchRollingStoneListFromGist() {
+  const gistResponse = await fetch(ROLLING_STONE_GIST_API);
+  if (!gistResponse.ok) {
+    throw new Error(`Gist lookup failed (${gistResponse.status}).`);
+  }
+
+  const gistData = await gistResponse.json();
+  const files = Object.values(gistData?.files || {});
+  const csvFile = files.find((file) => String(file?.filename || "").toLowerCase().endsWith(".csv"));
+
+  if (!csvFile?.raw_url) {
+    throw new Error("No CSV file found in gist source.");
+  }
+
+  const csvResponse = await fetch(csvFile.raw_url);
+  if (!csvResponse.ok) {
+    throw new Error(`Gist CSV download failed (${csvResponse.status}).`);
+  }
+
+  const csvText = await csvResponse.text();
+  const parsedCsv = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+  const parsedRows = Array.isArray(parsedCsv.data) ? parsedCsv.data : [];
+
+  return normalizeRollingStoneRows(parsedRows);
+}
+
+function normalizeReleaseId(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const normalizedValue = String(value).trim();
+  return normalizedValue || null;
+}
+
+function isTransientArtworkError(errorMessage) {
+  if (!errorMessage) {
+    return false;
+  }
+
+  return /(429|5\d\d|network|failed to fetch|timeout)/i.test(String(errorMessage));
+}
+
 function App() {
   const navigate = useNavigate();
-  const [records, setRecords] = useState([]);
+  const location = useLocation();
+  const [baseRecords, setBaseRecords] = useState([]);
+  const [addedRecords, setAddedRecords] = useState(() => loadAddedRecords());
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
   const [selectedAlbum, setSelectedAlbum] = useState(null);
-  const [savedAlbumDetails, setSavedAlbumDetails] = useState(() => loadSavedMemories());
+  const [savedAlbumDetails, setSavedAlbumDetails] = useState(() =>
+    normalizeSavedAlbumDetails(loadSavedMemories())
+  );
   const [surpriseSelection, setSurpriseSelection] = useState(null);
   const [activeFilter, setActiveFilter] = useState("all");
   const [collectionSort, setCollectionSort] = useState("artist-asc");
+  const [collectionView, setCollectionView] = useState("grid");
+  const [collectionLetter, setCollectionLetter] = useState("A");
   const [recentlyViewed, setRecentlyViewed] = useState(() => loadRecentlyViewed());
   const [artworkEntries, setArtworkEntries] = useState(() => artworkManager.getSnapshot());
+  const [customArtworkByAlbumKey, setCustomArtworkByAlbumKey] = useState(() =>
+    loadStoredJson(CUSTOM_ARTWORK_KEY, {})
+  );
+  const [rollingStoneList, setRollingStoneList] = useState(() => loadRollingStoneList());
+  const [rollingStoneStatus, setRollingStoneStatus] = useState("");
+  const [collectionWorthEstimate, setCollectionWorthEstimate] = useState({
+    total: 0,
+    sampled: 0,
+    sampleSize: 0,
+    currency: "USD",
+  });
+  const records = useMemo(() => [...addedRecords, ...baseRecords], [addedRecords, baseRecords]);
   const recentlyViewedAlbumKeys = recentlyViewed.map((entry) => entry.albumKey);
+
+  useEffect(() => {
+    function handlePopState() {
+      setSelectedAlbum((currentAlbum) => (currentAlbum ? null : currentAlbum));
+    }
+
+    const originalPushState = window.history.pushState.bind(window.history);
+    const originalReplaceState = window.history.replaceState.bind(window.history);
+
+    window.history.pushState = (state, title, url) => {
+      const isModalState = Boolean(state && typeof state === "object" && state.__mmAlbumModal);
+      if (!isModalState) {
+        setSelectedAlbum(null);
+      }
+
+      return originalPushState(state, title, url);
+    };
+
+    window.history.replaceState = (state, title, url) => {
+      const isModalState = Boolean(state && typeof state === "object" && state.__mmAlbumModal);
+      if (!isModalState) {
+        setSelectedAlbum(null);
+      }
+
+      return originalReplaceState(state, title, url);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+      window.history.pushState = originalPushState;
+      window.history.replaceState = originalReplaceState;
+    };
+  }, []);
+
+  useEffect(() => {
+    setSelectedAlbum(null);
+  }, [location.pathname]);
 
   useEffect(() => {
     Papa.parse("/Pault99-collection-20260803-1505.csv", {
       download: true,
       header: true,
       complete: (results) => {
-        setRecords(
+        setBaseRecords(
           results.data
             .filter((record) => record.Artist && record.Title)
             .map((record, rowIndex) => ({
@@ -103,10 +542,52 @@ function App() {
     });
   }, []);
 
-  useEffect(() => artworkManager.subscribe(setArtworkEntries), []);
-
   useEffect(() => {
   }, [records]);
+
+  function addRecordToCollection(record) {
+    const normalizedReleaseId = normalizeReleaseId(record.release_id || record.releaseId);
+    const nextRecord = {
+      Artist: record.Artist || record.artist || "Unknown Artist",
+      Title: record.Title || record.title || "Unknown Album",
+      Released: record.Released || record.year || "Unknown",
+      Label: record.Label || record.label || "",
+      Format: record.Format || "Vinyl",
+      Rating: record.Rating || "",
+      release_id: normalizedReleaseId,
+      CollectionFolder: record.CollectionFolder || "1",
+      "Date Added": record["Date Added"] || new Date().toISOString(),
+      cover: record.cover || record.thumb || null,
+      thumb: record.thumb || record.cover || null,
+      genres: record.genres || "",
+      __rowIndex: `added-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    };
+
+    const recordKey = getAlbumKey(nextRecord);
+
+    setAddedRecords((currentRecords) => {
+      const alreadyExists = currentRecords.some((currentRecord) => getAlbumKey(currentRecord) === recordKey)
+        || baseRecords.some((currentRecord) => getAlbumKey(currentRecord) === recordKey);
+
+      if (alreadyExists) {
+        setMessage("Album is already in your collection.");
+        return currentRecords;
+      }
+
+      const nextRecords = [nextRecord, ...currentRecords];
+
+      try {
+        localStorage.setItem(ADDED_RECORDS_KEY, JSON.stringify(nextRecords));
+      } catch {
+        // Ignore storage failures and keep in-memory additions.
+      }
+
+      setMessage(`Added ${nextRecord.Title} by ${nextRecord.Artist} to your collection.`);
+      return nextRecords;
+    });
+
+    navigate("/collection");
+  }
 
   function getAlbumKey(album) {
     return album.albumKey || album.release_id || `${album.Artist}-${album.Title}-${album.Released}`;
@@ -135,18 +616,140 @@ function App() {
   }
 
   function getArtworkEntry(record) {
-    return artworkEntries[getAlbumKey(record)] || {
+    const albumKey = getAlbumKey(record);
+    const customArtworkUrl = customArtworkByAlbumKey[albumKey] || null;
+    const embeddedArtworkUrl = record.cover || record.thumb || null;
+
+    if (customArtworkUrl) {
+      return {
+        status: "loaded",
+        coverUrl: customArtworkUrl,
+        releaseData: null,
+        error: null,
+      };
+    }
+
+    const entry = artworkEntries[albumKey] || {
       status: "idle",
       coverUrl: null,
       releaseData: null,
     };
+
+    if (entry.status === "idle" && !entry.coverUrl && embeddedArtworkUrl) {
+      return {
+        ...entry,
+        status: "loaded",
+        coverUrl: embeddedArtworkUrl,
+      };
+    }
+
+    const traceStore = getTraceStore();
+    if (isTracedAlbumKey(traceStore, albumKey)) {
+      const snapshotKey = `${entry.status}|${entry.coverUrl || ""}`;
+      if (traceStore.__MM_TRACE_LAST_GET_ARTWORK_ENTRY__ !== snapshotKey) {
+        traceStore.__MM_TRACE_LAST_GET_ARTWORK_ENTRY__ = snapshotKey;
+        logTraceStage("5.getArtworkEntry()", {
+          albumKey,
+          entry,
+        });
+      }
+    }
+
+    return entry;
+  }
+
+  function refreshArtworkEntries() {
+    setArtworkEntries(artworkManager.getSnapshot());
+  }
+
+  function updateRecentlyViewedArtwork(albumKey, coverUrl) {
+    if (!coverUrl) {
+      return;
+    }
+
+    setRecentlyViewed((currentAlbums) => {
+      let hasChanged = false;
+
+      const nextAlbums = currentAlbums.map((entry) => {
+        if (entry.albumKey !== albumKey || entry.artwork === coverUrl) {
+          return entry;
+        }
+
+        hasChanged = true;
+        return {
+          ...entry,
+          artwork: coverUrl,
+        };
+      });
+
+      if (!hasChanged) {
+        return currentAlbums;
+      }
+
+      try {
+        localStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify(nextAlbums));
+      } catch {
+        // Ignore storage failures and keep the in-memory state update.
+      }
+
+      return nextAlbums;
+    });
+  }
+
+  function handleAlbumCardVisible(record) {
+    const albumKey = getAlbumKey(record);
+    const albumWithKey = {
+      ...record,
+      albumKey,
+    };
+
+    const currentEntry = artworkManager.getEntry(albumKey);
+    if (currentEntry.status === "loaded" || currentEntry.status === "missing") {
+      return;
+    }
+
+    // Skip network work when artwork already exists in the base record payload.
+    if (record.cover || record.thumb || customArtworkByAlbumKey[albumKey]) {
+      return;
+    }
+
+    const request = artworkManager.ensureAlbumArtwork(albumWithKey, getRelease);
+    refreshArtworkEntries();
+
+    Promise.resolve(request).then(async (nextArtworkEntry) => {
+      let resolvedArtworkEntry = nextArtworkEntry;
+
+      if (
+        nextArtworkEntry?.status === "idle" &&
+        isTransientArtworkError(nextArtworkEntry?.error)
+      ) {
+        // Retry once for transient API/network failures on first visibility load.
+        resolvedArtworkEntry = await artworkManager.ensureAlbumArtwork(albumWithKey, getRelease);
+      }
+
+      refreshArtworkEntries();
+      updateRecentlyViewedArtwork(albumKey, resolvedArtworkEntry.coverUrl);
+
+      setSelectedAlbum((currentAlbum) => {
+        if (!currentAlbum || currentAlbum.albumKey !== albumKey) {
+          return currentAlbum;
+        }
+
+        const savedDetails = savedAlbumDetails[albumKey] || {};
+        return {
+          ...currentAlbum,
+          ...mergeAlbumWithArtwork(record, savedDetails, resolvedArtworkEntry),
+          albumKey,
+        };
+      });
+    });
   }
 
   function mergeAlbumWithArtwork(record, savedAlbum, artworkEntry) {
     return {
       ...record,
       ...savedAlbum,
-      cover: artworkEntry.coverUrl,
+      cover: artworkEntry.coverUrl || record.cover || record.thumb || null,
       artworkStatus: artworkEntry.status,
       year: artworkEntry.releaseData?.year || record.Released,
       label: artworkEntry.releaseData?.label || record.Label || "",
@@ -176,10 +779,62 @@ function App() {
     `${record.Artist} ${record.Title}`.toLowerCase().includes(searchQuery)
   );
 
+  const rollingStoneOwnedAlbumKeySet = useMemo(() => {
+    if (!rollingStoneList.length) {
+      return new Set();
+    }
+
+    const rollingStoneKeySet = new Set(
+      rollingStoneList.map((entry) => `${normalizeMatchText(entry.artist)}|||${normalizeMatchText(entry.album)}`)
+    );
+    const ownedAlbumKeys = new Set();
+
+    records.forEach((record) => {
+      const key = `${normalizeMatchText(record.Artist)}|||${normalizeMatchText(record.Title)}`;
+      if (rollingStoneKeySet.has(key)) {
+        ownedAlbumKeys.add(getAlbumKey(record));
+      }
+    });
+
+    return ownedAlbumKeys;
+  }, [rollingStoneList, records]);
+
+  const notListenedAlbumKeySet = useMemo(() => {
+    const listenedAlbumKeySet = new Set(recentlyViewedAlbumKeys);
+
+    return new Set(
+      records
+        .map((record) => getAlbumKey(record))
+        .filter((albumKey) => !listenedAlbumKeySet.has(albumKey))
+    );
+  }, [records, recentlyViewedAlbumKeys]);
+
+  const notListenedPreviewAlbumKeySet = useMemo(() => {
+    const listenedAlbumKeySet = new Set(recentlyViewedAlbumKeys);
+
+    const unplayedByNewestAdded = [...records]
+      .filter((record) => !listenedAlbumKeySet.has(getAlbumKey(record)))
+      .map((record) => {
+        const dateAddedRaw = record["Date Added"] || record.dateAdded || record.DateAdded || "";
+        const sortValue = dateAddedRaw ? new Date(dateAddedRaw).getTime() : 0;
+
+        return {
+          albumKey: getAlbumKey(record),
+          sortValue,
+        };
+      })
+      .sort((firstItem, secondItem) => secondItem.sortValue - firstItem.sortValue)
+      .slice(0, 5);
+
+    return new Set(unplayedByNewestAdded.map((item) => item.albumKey));
+  }, [records, recentlyViewedAlbumKeys]);
+
   const quickFilters = [
     { id: "all", label: "All Records" },
+    { id: "unplayed", label: "🔕 Not Listened" },
+    { id: "unplayed5", label: "🖐 Not Listened (5)" },
     { id: "favorites", label: "❤️ Favourites" },
-    { id: "rated5", label: "⭐ Rated 5 Stars" },
+    { id: "rated5", label: "⭐ Top Rated" },
     { id: "memories", label: "📝 Has Memories" },
     { id: "1970s", label: "📅 1970s" },
     { id: "1980s", label: "📅 1980s" },
@@ -194,9 +849,16 @@ function App() {
     const albumKey = getAlbumKey(record);
 
     switch (filterId) {
+      case "unplayed":
+        return notListenedAlbumKeySet.has(albumKey);
+      case "unplayed5":
+        return notListenedPreviewAlbumKeySet.has(albumKey);
       case "favorites":
         return Boolean(savedAlbum.favorite);
       case "rated5":
+        if (rollingStoneList.length) {
+          return rollingStoneOwnedAlbumKeySet.has(albumKey);
+        }
         return Number(savedAlbum.rating) === 5;
       case "memories":
         return Boolean(savedAlbum.memory?.trim());
@@ -216,12 +878,129 @@ function App() {
     }
   }
 
+  useEffect(() => {
+    let isCanceled = false;
+
+    async function loadCollectionWorthEstimate() {
+      const releaseIdToContext = new Map();
+
+      records.forEach((record) => {
+        const releaseId = normalizeReleaseId(record.release_id || record.releaseId);
+        if (!releaseId || releaseIdToContext.has(releaseId)) {
+          return;
+        }
+
+        releaseIdToContext.set(releaseId, {
+          artist: record.Artist,
+          title: record.Title,
+          year: record.Released,
+        });
+      });
+
+      const releaseIds = Array.from(releaseIdToContext.keys());
+      const sampleReleaseIds = releaseIds.slice(0, 10);
+
+      if (!sampleReleaseIds.length) {
+        if (!isCanceled) {
+          setCollectionWorthEstimate({
+            total: 0,
+            sampled: 0,
+            sampleSize: 0,
+            currency: "USD",
+          });
+        }
+        return;
+      }
+
+      const pricedValues = [];
+      let currencyCode = "USD";
+
+      for (let index = 0; index < sampleReleaseIds.length; index += 4) {
+        const chunk = sampleReleaseIds.slice(index, index + 4);
+        const results = await Promise.allSettled(
+          chunk.map(async (releaseId) => {
+            const fallbackContext = releaseIdToContext.get(releaseId) || null;
+            return getRelease(releaseId, fallbackContext);
+          })
+        );
+
+        results.forEach((result) => {
+          if (result.status !== "fulfilled") {
+            return;
+          }
+
+          const releaseData = result.value;
+          const lowestPrice = Number(releaseData?.lowestPrice);
+
+          if (!Number.isFinite(lowestPrice) || lowestPrice <= 0) {
+            return;
+          }
+
+          pricedValues.push(lowestPrice);
+          if (releaseData?.priceCurrency) {
+            currencyCode = releaseData.priceCurrency;
+          }
+        });
+      }
+
+      if (isCanceled) {
+        return;
+      }
+
+      setCollectionWorthEstimate({
+        total: pricedValues.reduce((sum, value) => sum + value, 0),
+        sampled: pricedValues.length,
+        sampleSize: sampleReleaseIds.length,
+        currency: currencyCode,
+      });
+    }
+
+    void loadCollectionWorthEstimate();
+
+    return () => {
+      isCanceled = true;
+    };
+  }, [records]);
+
   const filteredRecords = searchMatchedRecords.filter((record) =>
     recordMatchesFilter(record, activeFilter)
   );
 
+  const letterFilteredRecords = useMemo(() => {
+    const hasSearch = Boolean(searchQuery.trim());
+    const isQuickFilterActive = activeFilter !== "all";
+
+    if (hasSearch || isQuickFilterActive || !collectionLetter || collectionLetter === "ALL") {
+      return filteredRecords;
+    }
+
+    return filteredRecords.filter((record) => {
+      const artist = (record.Artist || "").trim();
+      if (!artist) {
+        return false;
+      }
+
+      if (collectionLetter === "0-9") {
+        return /^\d/.test(artist);
+      }
+
+      return artist[0].toUpperCase() === collectionLetter;
+    });
+  }, [filteredRecords, collectionLetter, searchQuery, activeFilter]);
+
+  const activeQuickFilter = quickFilters.find((filter) => filter.id === activeFilter) || quickFilters[0];
+
+  const collectionFilterLabel =
+    activeFilter !== "all"
+      ? `${activeQuickFilter.label} filter`
+      : collectionLetter === "ALL"
+        ? "All artists"
+        : collectionLetter === "0-9"
+          ? "0-9 artists"
+          : `${collectionLetter} artists`;
+
   const sortedCollectionRecords = useMemo(() => {
-    const sortedRecords = [...filteredRecords];
+    const sortedRecords = [...letterFilteredRecords];
 
     sortedRecords.sort((firstRecord, secondRecord) => {
       const firstArtist = firstRecord.Artist || "Unknown Artist";
@@ -249,7 +1028,53 @@ function App() {
     });
 
     return sortedRecords;
-  }, [filteredRecords, collectionSort]);
+  }, [letterFilteredRecords, collectionSort]);
+
+  const collectionArtworkProgress = useMemo(() => {
+    return sortedCollectionRecords.reduce(
+      (progress, record) => {
+        const albumKey = getAlbumKey(record);
+        const entry = artworkEntries[albumKey] || {
+          status: "idle",
+          coverUrl: null,
+          error: null,
+        };
+
+        progress.total += 1;
+
+        if (entry.status === "loaded" && entry.coverUrl) {
+          progress.loaded += 1;
+          return progress;
+        }
+
+        if (entry.status === "loading") {
+          progress.loading += 1;
+          return progress;
+        }
+
+        if (entry.status === "missing") {
+          progress.missing += 1;
+          return progress;
+        }
+
+        if (entry.error) {
+          progress.failed += 1;
+          return progress;
+        }
+
+        progress.pending += 1;
+        return progress;
+      },
+      {
+        total: 0,
+        loaded: 0,
+        loading: 0,
+        failed: 0,
+        missing: 0,
+        pending: 0,
+      }
+    );
+  }, [sortedCollectionRecords, artworkEntries]);
 
   const filterCounts = quickFilters.reduce((counts, filter) => {
     counts[filter.id] = searchMatchedRecords.filter((record) =>
@@ -394,46 +1219,70 @@ function App() {
     return Number(savedDetails.rating) === 5;
   });
 
+  const recordsByAlbumKey = useMemo(() => {
+    const byAlbumKey = new Map();
+
+    records.forEach((record) => {
+      byAlbumKey.set(getAlbumKey(record), record);
+    });
+
+    return byAlbumKey;
+  }, [records]);
+
   const memoriesByArtist = useMemo(() => {
     const groupedMemories = new Map();
 
-    records.forEach((record) => {
-      const albumKey = getAlbumKey(record);
-      const savedDetails = savedAlbumDetails[albumKey] || {};
-      const memoryText = savedDetails.memory?.trim();
-
+    Object.entries(savedAlbumDetails).forEach(([albumKey, savedDetails]) => {
+      const memoryText = savedDetails?.memory?.trim();
       if (!memoryText) {
         return;
       }
 
-      const artist = record.Artist || "Unknown Artist";
+      const matchingRecord = recordsByAlbumKey.get(albumKey) || null;
+      const fallback = parseAlbumKeyFallback(albumKey);
+      const artist =
+        (matchingRecord?.Artist || savedDetails.artist || fallback.artist || "Unknown Artist").trim() ||
+        "Unknown Artist";
+      const title = (matchingRecord?.Title || savedDetails.title || fallback.title || "Unknown Album").trim() ||
+        "Unknown Album";
+      const released = matchingRecord?.Released || savedDetails.released || fallback.released || "";
+      const recordForOpen = matchingRecord
+        ? {
+            ...matchingRecord,
+            // Preserve the exact saved-memory key so we open and edit the right memory entry.
+            albumKey,
+          }
+        : {
+            albumKey,
+            release_id: normalizeReleaseId(savedDetails.release_id),
+            Artist: artist,
+            Title: title,
+            Released: released || "Unknown",
+            cover: null,
+            thumb: null,
+          };
+
       if (!groupedMemories.has(artist)) {
         groupedMemories.set(artist, []);
       }
 
       groupedMemories.get(artist).push({
         albumKey,
-        recordKey: getRecordListKey(record),
-        title: record.Title,
-        released: record.Released,
+        recordKey: `memory-${albumKey}`,
+        title,
+        released,
         memory: memoryText,
-        record,
+        record: recordForOpen,
       });
     });
 
     return Array.from(groupedMemories.entries())
-      .map(([artist, entries]) => ({ artist, entries }))
+      .map(([artist, entries]) => ({
+        artist,
+        entries: [...entries].sort((firstEntry, secondEntry) => firstEntry.title.localeCompare(secondEntry.title)),
+      }))
       .sort((firstGroup, secondGroup) => firstGroup.artist.localeCompare(secondGroup.artist));
-  }, [records, savedAlbumDetails]);
-
-  async function testDiscogs() {
-    try {
-      const album = await getRelease(249504);
-      setMessage(`✅ Connected! Album: ${album.title}`);
-    } catch (error) {
-      setMessage(`❌ ${error.message}`);
-    }
-  }
+  }, [savedAlbumDetails, recordsByAlbumKey]);
 
   function openArtistView(artistName) {
     if (!artistName) {
@@ -446,6 +1295,10 @@ function App() {
 
   function closeArtistView() {
     navigate("/artists");
+  }
+
+  function dismissAlbumModalForNavigation() {
+    setSelectedAlbum(null);
   }
 
   async function surpriseMe() {
@@ -469,17 +1322,31 @@ function App() {
     const savedDetails = savedAlbumDetails[albumKey] || {};
     const artworkEntry = getArtworkEntry(record);
     const viewedAt = new Date().toISOString();
-    const initialArtwork = artworkEntry.coverUrl || record.cover || record.thumb || null;
+    const initialArtwork =
+      customArtworkByAlbumKey[albumKey] || artworkEntry.coverUrl || record.cover || record.thumb || null;
+
+    const historyState = window.history.state || {};
+    if (!historyState.__mmAlbumModal) {
+      window.history.pushState(
+        {
+          ...historyState,
+          __mmAlbumModal: true,
+        },
+        ""
+      );
+    }
 
     setSelectedAlbum({
       ...mergeAlbumWithArtwork(record, savedDetails, artworkEntry),
       albumKey,
+      __openPathname: location.pathname,
     });
 
     setRecentlyViewed((currentAlbums) => {
       const nextAlbums = [
         {
           albumKey,
+          release_id: normalizeReleaseId(record.release_id || record.releaseId),
           artist: record.Artist || "Unknown Artist",
           album: record.Title || "Unknown Album",
           artwork: initialArtwork,
@@ -496,49 +1363,6 @@ function App() {
 
       return nextAlbums;
     });
-
-    if (!record.release_id) {
-      return;
-    }
-
-    try {
-      const nextArtworkEntry = await artworkManager.ensureAlbumArtwork({ ...record, albumKey }, getRelease);
-
-      if (nextArtworkEntry.coverUrl) {
-        setRecentlyViewed((currentAlbums) => {
-          const nextAlbums = currentAlbums.map((entry) =>
-            entry.albumKey === albumKey
-              ? {
-                  ...entry,
-                  artwork: nextArtworkEntry.coverUrl,
-                }
-              : entry
-          );
-
-          try {
-            localStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify(nextAlbums));
-          } catch {
-            // Ignore storage failures and keep the in-memory state update.
-          }
-
-          return nextAlbums;
-        });
-      }
-
-      setSelectedAlbum((currentAlbum) => {
-        if (!currentAlbum || currentAlbum.albumKey !== albumKey) {
-          return currentAlbum;
-        }
-
-        return {
-          ...currentAlbum,
-          ...mergeAlbumWithArtwork(record, savedDetails, nextArtworkEntry),
-          albumKey,
-        };
-      });
-    } catch {
-      // Keep the modal open with CSV data if Discogs enrichment fails.
-    }
   }
 
   async function openRecentlyViewedAlbum(recentEntry) {
@@ -551,6 +1375,7 @@ function App() {
 
     await openAlbum({
       albumKey: recentEntry.albumKey,
+      release_id: normalizeReleaseId(recentEntry.release_id),
       Artist: recentEntry.artist || "Unknown Artist",
       Title: recentEntry.album || "Unknown Album",
       Released: "Unknown",
@@ -571,6 +1396,10 @@ function App() {
           memory: details.memory,
           favorite: details.favorite,
           rating: details.rating,
+          artist: details.Artist || "",
+          title: details.Title || "",
+          released: details.Released || details.year || "",
+          release_id: normalizeReleaseId(details.release_id || details.releaseId),
         },
       };
 
@@ -608,6 +1437,10 @@ function App() {
           ...currentEntry,
           favorite: details.favorite,
           rating: details.rating,
+          artist: details.Artist || currentEntry.artist || "",
+          title: details.Title || currentEntry.title || "",
+          released: details.Released || details.year || currentEntry.released || "",
+          release_id: normalizeReleaseId(details.release_id || details.releaseId || currentEntry.release_id),
         },
       };
 
@@ -632,7 +1465,247 @@ function App() {
   }
 
   function closeAlbum() {
+    if (window.history.state?.__mmAlbumModal) {
+      window.history.back();
+      return;
+    }
+
     setSelectedAlbum(null);
+  }
+
+  function saveCustomArtwork(album, artworkDataUrl) {
+    if (!album) {
+      return;
+    }
+
+    const albumKey = getAlbumKey(album);
+    if (!albumKey || !artworkDataUrl) {
+      return;
+    }
+
+    setCustomArtworkByAlbumKey((currentEntries) => {
+      const nextEntries = {
+        ...currentEntries,
+        [albumKey]: artworkDataUrl,
+      };
+
+      try {
+        localStorage.setItem(CUSTOM_ARTWORK_KEY, JSON.stringify(nextEntries));
+      } catch {
+        // Ignore storage failures and keep in-memory custom artwork overrides.
+      }
+
+      return nextEntries;
+    });
+
+    setSelectedAlbum((currentAlbum) =>
+      currentAlbum && getAlbumKey(currentAlbum) === albumKey
+        ? {
+            ...currentAlbum,
+            cover: artworkDataUrl,
+            thumb: artworkDataUrl,
+          }
+        : currentAlbum
+    );
+  }
+
+  function clearCustomArtwork(album) {
+    if (!album) {
+      return;
+    }
+
+    const albumKey = getAlbumKey(album);
+    if (!albumKey) {
+      return;
+    }
+
+    setCustomArtworkByAlbumKey((currentEntries) => {
+      if (!currentEntries[albumKey]) {
+        return currentEntries;
+      }
+
+      const nextEntries = { ...currentEntries };
+      delete nextEntries[albumKey];
+
+      try {
+        localStorage.setItem(CUSTOM_ARTWORK_KEY, JSON.stringify(nextEntries));
+      } catch {
+        // Ignore storage failures and keep in-memory custom artwork overrides.
+      }
+
+      return nextEntries;
+    });
+  }
+
+  function exportLibraryBackup() {
+    const exportedAt = new Date().toISOString();
+    const fileName = `music-and-memories-backup-${exportedAt.slice(0, 10)}.json`;
+    const backupPayload = {
+      version: 1,
+      exportedAt,
+      data: {
+        addedRecords,
+        savedAlbumDetails,
+        recentlyViewed,
+        customArtworkByAlbumKey,
+        rollingStoneList,
+      },
+    };
+
+    const backupBlob = new Blob([JSON.stringify(backupPayload, null, 2)], {
+      type: "application/json",
+    });
+
+    const downloadUrl = URL.createObjectURL(backupBlob);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(downloadUrl);
+
+    return fileName;
+  }
+
+  async function importLibraryBackup(file) {
+    if (!file) {
+      throw new Error("Choose a backup file first.");
+    }
+
+    const fileText = await file.text();
+    const parsedBackup = JSON.parse(fileText);
+    const backupData = parsedBackup?.data && typeof parsedBackup.data === "object"
+      ? parsedBackup.data
+      : parsedBackup;
+
+    const nextAddedRecords = normalizeAddedRecords(backupData?.addedRecords || []);
+    const nextSavedAlbumDetails = normalizeSavedAlbumDetails(backupData?.savedAlbumDetails || {});
+    const nextRecentlyViewed = normalizeRecentlyViewedEntries(backupData?.recentlyViewed || []);
+    const nextCustomArtwork = normalizeCustomArtworkEntries(backupData?.customArtworkByAlbumKey || {});
+    const nextRollingStoneList = normalizeRollingStoneEntries(backupData?.rollingStoneList || []);
+
+    setAddedRecords(nextAddedRecords);
+    setSavedAlbumDetails(nextSavedAlbumDetails);
+    setRecentlyViewed(nextRecentlyViewed);
+    setCustomArtworkByAlbumKey(nextCustomArtwork);
+    setRollingStoneList(nextRollingStoneList);
+    setRollingStoneStatus(nextRollingStoneList.length ? `Imported ${nextRollingStoneList.length} tracker entries.` : "");
+    setSelectedAlbum(null);
+
+    try {
+      localStorage.setItem(ADDED_RECORDS_KEY, JSON.stringify(nextAddedRecords));
+      localStorage.setItem(SAVED_MEMORIES_KEY, JSON.stringify(nextSavedAlbumDetails));
+      localStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify(nextRecentlyViewed));
+      localStorage.setItem(CUSTOM_ARTWORK_KEY, JSON.stringify(nextCustomArtwork));
+      localStorage.setItem(ROLLING_STONE_LIST_KEY, JSON.stringify(nextRollingStoneList));
+    } catch {
+      // Keep imported state in memory even if persistence hits a browser quota limit.
+    }
+
+    return `Imported ${nextAddedRecords.length} added records, ${Object.keys(nextSavedAlbumDetails).length} album notes, and ${Object.keys(nextCustomArtwork).length} custom artwork overrides.`;
+  }
+
+  function clearRecentlyViewedHistory() {
+    setRecentlyViewed([]);
+
+    try {
+      localStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify([]));
+    } catch {
+      // Ignore storage failures and keep the in-memory reset.
+    }
+
+    return "Recently viewed history cleared.";
+  }
+
+  function clearRollingStoneTracker() {
+    setRollingStoneList([]);
+    setRollingStoneStatus("");
+
+    try {
+      localStorage.setItem(ROLLING_STONE_LIST_KEY, JSON.stringify([]));
+    } catch {
+      // Ignore storage failures and keep the in-memory reset.
+    }
+
+    return "Rolling Stone tracker cleared.";
+  }
+
+  async function forceRefreshApp() {
+    if (typeof window === "undefined") {
+      return "Refreshing app...";
+    }
+
+    try {
+      if ("serviceWorker" in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map((registration) => registration.unregister()));
+      }
+
+      if ("caches" in window) {
+        const cacheKeys = await caches.keys();
+        await Promise.all(cacheKeys.map((cacheKey) => caches.delete(cacheKey)));
+      }
+    } catch {
+      // Continue reload attempt even if cleanup partially fails.
+    }
+
+    const targetUrl = `${window.location.pathname}${window.location.search || ""}`;
+    window.location.replace(`${targetUrl}${targetUrl.includes("?") ? "&" : "?"}refresh=${Date.now()}`);
+    return "Refreshing app...";
+  }
+
+  async function importRollingStoneListOnline() {
+    setRollingStoneStatus("Fetching current Top 500 list...");
+
+    try {
+      const gistList = await fetchRollingStoneListFromGist();
+      if (isLikelyTop500List(gistList)) {
+        setRollingStoneList(gistList);
+        localStorage.setItem(ROLLING_STONE_LIST_KEY, JSON.stringify(gistList));
+        setRollingStoneStatus(`Imported ${gistList.length} entries from online list.`);
+        return;
+      }
+
+      const pageName = "Rolling_Stone's_500_Greatest_Albums_of_All_Time";
+      const endpoint = `https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(pageName)}&prop=text&formatversion=2&format=json&origin=*`;
+      const response = await fetch(endpoint);
+
+      if (!response.ok) {
+        throw new Error(`Online import failed (${response.status}).`);
+      }
+
+      const data = await response.json();
+      const htmlText = data?.parse?.text || "";
+
+      if (!htmlText) {
+        throw new Error("No list content found from online source.");
+      }
+
+      const parsedRows = parseRollingStoneFromWikipediaHtml(htmlText);
+      const normalizedList = normalizeRollingStoneRows(parsedRows);
+
+      if (!isLikelyTop500List(normalizedList)) {
+        throw new Error(
+          `Online source returned only ${normalizedList.length} usable rows. The full list is not publicly exposed on that page for auto-import.`
+        );
+      }
+
+      setRollingStoneList(normalizedList);
+      localStorage.setItem(ROLLING_STONE_LIST_KEY, JSON.stringify(normalizedList));
+      setRollingStoneStatus(`Imported ${normalizedList.length} entries from current online list.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Online import failed.";
+      setRollingStoneStatus(
+        `${message} If you want, I can switch this to import from a specific public data URL you choose.`
+      );
+    }
+  }
+
+  function clearRollingStoneList() {
+    setRollingStoneList([]);
+    localStorage.removeItem(ROLLING_STONE_LIST_KEY);
+    setRollingStoneStatus("Rolling Stone list cleared.");
   }
 
   function handleRecentlyPlayedArtistClick(event, artistName) {
@@ -676,7 +1749,16 @@ function App() {
   }, [surpriseSelection]);
 
   useEffect(() => {
-    artworkManager.queueArtwork(filteredRecords.slice(0, 48), getRelease, "priority");
+    const traceStore = getTraceStore();
+    if (traceStore && !traceStore.__MM_TRACE_FIRST_ALBUM__ && filteredRecords.length) {
+      const firstQueuedRecord = filteredRecords[0];
+      traceStore.__MM_TRACE_FIRST_ALBUM__ = {
+        albumKey: getAlbumKey(firstQueuedRecord),
+        release_id: firstQueuedRecord.release_id || null,
+      };
+
+      console.log("[MM TRACE] 1.albumKey / 2.release_id", traceStore.__MM_TRACE_FIRST_ALBUM__);
+    }
   }, [filteredRecords]);
 
   function renderAlbumGrid(recordList, hintText, highlightBySurprise = false) {
@@ -702,6 +1784,7 @@ function App() {
                 record={record}
                 onClick={openAlbum}
                 onArtistClick={openArtistView}
+                onVisible={handleAlbumCardVisible}
                 id={getAlbumCardId(albumKey)}
                 highlighted={highlightBySurprise && surpriseSelection?.albumKey === albumKey}
                 favorite={savedDetails.favorite}
@@ -712,6 +1795,47 @@ function App() {
             );
           })}
         </ul>
+      </>
+    );
+  }
+
+  function renderAlbumCrate(recordList, hintText, highlightBySurprise = false) {
+    if (!recordList.length) {
+      return <p className="empty-state">No albums match this view yet.</p>;
+    }
+
+    return (
+      <>
+        <div className="results-row">
+          <h2 className="results-row__title">{recordList.length} Records</h2>
+          <p className="results-row__hint">{hintText}</p>
+        </div>
+
+        <div className="collection-crate-shell">
+          <div className="collection-crate-rim" aria-hidden="true" />
+          <ul className="collection-crate" aria-label="Crate view albums">
+            {recordList.map((record) => {
+              const albumKey = getAlbumKey(record);
+              const savedDetails = savedAlbumDetails[albumKey] || {};
+
+              return (
+                <AlbumCard
+                  key={getRecordListKey(record)}
+                  record={record}
+                  onClick={openAlbum}
+                  onArtistClick={openArtistView}
+                  onVisible={handleAlbumCardVisible}
+                  id={getAlbumCardId(albumKey)}
+                  highlighted={highlightBySurprise && surpriseSelection?.albumKey === albumKey}
+                  favorite={savedDetails.favorite}
+                  rating={savedDetails.rating}
+                  cover={getArtworkEntry(record).coverUrl}
+                  artworkStatus={getArtworkEntry(record).status}
+                />
+              );
+            })}
+          </ul>
+        </div>
       </>
     );
   }
@@ -791,130 +1915,179 @@ function App() {
   }
 
   function HomePage() {
-    const todayArtwork = todayAlbum ? getArtworkEntry(todayAlbum).coverUrl : null;
+    const latestArrivalAlbums = useMemo(() => {
+      return [...records]
+        .map((record, index) => {
+          const dateAddedRaw = record["Date Added"] || record.dateAdded || record.DateAdded || "";
+          const albumKey = getAlbumKey(record);
+
+          return {
+            artist: record.Artist || "Unknown Artist",
+            title: record.Title || "Unknown Album",
+            year: record.Released || "Unknown",
+            release_id: normalizeReleaseId(record.release_id || record.releaseId),
+            record,
+            __sortValue: dateAddedRaw ? new Date(dateAddedRaw).getTime() : 0,
+          };
+        })
+        .sort((firstAlbum, secondAlbum) => secondAlbum.__sortValue - firstAlbum.__sortValue)
+        .slice(0, 10)
+        .map(({ __sortValue, ...album }) => album);
+    }, [records]);
+
+    const tonightRecord = useMemo(() => {
+      if (!records.length) {
+        return null;
+      }
+
+      return records[Math.floor(Math.random() * records.length)];
+    }, [records]);
+
+    const tonightAlbum = tonightRecord
+      ? {
+          artist: tonightRecord.Artist || "Unknown Artist",
+          title: tonightRecord.Title || "Unknown Album",
+          year: tonightRecord.Released || "Unknown",
+          release_id: normalizeReleaseId(tonightRecord.release_id || tonightRecord.releaseId),
+          record: tonightRecord,
+        }
+      : null;
+
+    const continueListeningAlbums = useMemo(() => {
+      return recentlyViewed.map((entry) => {
+        const matchingRecord = records.find((record) => getAlbumKey(record) === entry.albumKey);
+        const releaseId = normalizeReleaseId(
+          matchingRecord?.release_id || matchingRecord?.releaseId || entry.release_id
+        );
+
+        return {
+          albumKey: entry.albumKey,
+          artist: matchingRecord?.Artist || entry.artist || "Unknown Artist",
+          title: matchingRecord?.Title || entry.album || "Unknown Album",
+          year: matchingRecord?.Released || "Unknown",
+          release_id: releaseId,
+          record:
+            matchingRecord || {
+              albumKey: entry.albumKey,
+              release_id: releaseId,
+              Artist: entry.artist || "Unknown Artist",
+              Title: entry.album || "Unknown Album",
+              Released: "Unknown",
+              cover: entry.artwork || null,
+              thumb: entry.artwork || null,
+            },
+        };
+      });
+    }, [recentlyViewed, records]);
+
+    const memoryCount = Object.values(savedAlbumDetails).filter((entry) => entry?.memory?.trim()).length;
+    const dashboardStats = [
+      { label: "Albums", value: records.length || 0, hint: "Curated sleeves" },
+      { label: "Artists", value: collectionStats.totalArtists, hint: "Across the archive" },
+      {
+        label: "Not Listened",
+        value: notListenedAlbumKeySet.size,
+        hint: "Tap to view 5 picks",
+        onClick: () => {
+          setActiveFilter("unplayed5");
+          setCollectionLetter("ALL");
+          setSearch("");
+          navigate("/collection");
+        },
+      },
+      {
+        label: "Memories",
+        value: memoryCount,
+        hint: "Stories saved - tap to open",
+        onClick: () => navigate("/memories"),
+      },
+      {
+        label: "Discogs Worth",
+        value: collectionWorthEstimate.sampled
+          ? formatCurrencyAmount(collectionWorthEstimate.total, collectionWorthEstimate.currency)
+          : "N/A",
+        hint: collectionWorthEstimate.sampled
+          ? `From ${collectionWorthEstimate.sampled}/${collectionWorthEstimate.sampleSize} priced releases`
+          : "No Discogs price data yet",
+      },
+    ];
+    const memoryEntries = memoriesByArtist.flatMap((group) => group.entries);
+    const randomMemoryEntry = useMemo(() => {
+      if (!memoryEntries.length) {
+        return null;
+      }
+
+      return memoryEntries[Math.floor(Math.random() * memoryEntries.length)];
+    }, [memoryEntries]);
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+    const tonightSavedDetails = tonightRecord ? getSavedAlbum(tonightRecord) : {};
+
+    function handleLatestArrivalSelect(album) {
+      if (album?.record) {
+        openAlbum(album.record);
+      }
+    }
+
+    function handleOpenYouTubeMusic(record) {
+      const search = `${record?.Artist || ""} ${record?.Title || ""}`.trim();
+      const encodedSearch = encodeURIComponent(search);
+      window.open(`https://music.youtube.com/search?q=${encodedSearch}`, "_blank", "noopener,noreferrer");
+    }
+
+    function handleToggleTonightFavorite(record) {
+      const albumKey = getAlbumKey(record);
+      const savedDetails = getSavedAlbum(record);
+
+      saveAlbumMetadata({
+        ...record,
+        albumKey,
+        favorite: !savedDetails.favorite,
+        rating: savedDetails.rating || 0,
+      });
+    }
 
     return (
-      <>
-        <section className="glass-panel home-welcome">
-          <div className="section-heading">
-            <p className="section-heading__eyebrow">Welcome</p>
-            <h2 className="section-heading__title">Your Music &amp; Memories Home</h2>
-          </div>
-          <p className="home-welcome__copy">
-            Explore your collection stories, rediscover records you played recently, and uncover a fresh album each day.
-          </p>
-        </section>
-
-        <section className="home-feature-grid">
-          <article className="glass-panel today-album-card">
-            <div className="section-heading">
-              <p className="section-heading__eyebrow">Today&apos;s Album</p>
-              <h2 className="section-heading__title">A daily vinyl pick</h2>
-            </div>
-
-            {todayAlbum ? (
-              <div className="today-album-card__content">
-                <div className="today-album-card__art">
-                  {todayArtwork ? (
-                    <img src={todayArtwork} alt={todayAlbum.Title} className="today-album-card__image" />
-                  ) : (
-                    <div className="artwork-state artwork-state--placeholder" aria-label="No artwork available">
-                      <span className="artwork-state__monogram">M&amp;M</span>
-                      <span className="artwork-state__label">Music &amp; Memories</span>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <p className="today-album-card__artist">{todayAlbum.Artist}</p>
-                  <p className="today-album-card__title">{todayAlbum.Title}</p>
-                  <button type="button" className="collection-button" onClick={() => openAlbum(todayAlbum)}>
-                    Open Album
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <p className="empty-state">Loading daily album...</p>
-            )}
-          </article>
-
-          <article className="glass-panel surprise-panel">
-            <div className="section-heading">
-              <p className="section-heading__eyebrow">Today&apos;s Surprise</p>
-              <h2 className="section-heading__title">Spin something unexpected</h2>
-            </div>
-            <p className="surprise-panel__copy">Pick a random album instantly and jump into its full details popup.</p>
-            <button onClick={surpriseMe} className="surprise-button surprise-button--wide">
-              🎲 Surprise Me
-            </button>
-          </article>
-        </section>
-
-        <section className="dashboard-stack">
-          <div className="section-heading">
-            <p className="section-heading__eyebrow">Dashboard</p>
-            <h2 className="section-heading__title">Collection overview</h2>
-          </div>
-
-          <section className="stats-grid">
-            {collectionStatItems.map((stat) => (
-              <article key={stat.label} className="glass-card stat-card">
-                <div className="stat-card__label">
-                  <span className="stat-card__icon">{stat.icon}</span>
-                  <span>{stat.label}</span>
-                </div>
-                {stat.detail ? <p className="stat-card__detail">{stat.detail}</p> : null}
-                <div
-                  className={`stat-card__value${
-                    stat.label === "Most Collected Artist" ? " stat-card__value--artist" : ""
-                  }`}
-                >
-                  {stat.label === "Most Collected Artist" && stat.value !== "N/A" ? (
-                    <button type="button" className="artist-link-button" onClick={() => openArtistView(stat.value)}>
-                      {stat.value}
-                    </button>
-                  ) : (
-                    stat.value
-                  )}
-                </div>
-              </article>
-            ))}
-          </section>
-
-          <section className="value-panel glass-panel">
-            <div className="section-heading">
-              <p className="section-heading__eyebrow">Collection Value</p>
-              <h2 className="section-heading__title">Estimated marketplace snapshot</h2>
-            </div>
-
-            <div className="value-grid">
-              {collectionValueItems.map((stat) => (
-                <article key={stat.label} className="glass-card value-card">
-                  <div className="stat-card__label">
-                    <span className="stat-card__icon">{stat.icon}</span>
-                    <span>{stat.label}</span>
-                  </div>
-                  <div
-                    className={`value-card__value${
-                      stat.label === "Most Valuable Album" ? " value-card__value--album" : ""
-                    }`}
-                  >
-                    {stat.value}
-                  </div>
-                  <p className="value-card__note">{stat.note}</p>
-                </article>
-              ))}
-            </div>
-          </section>
-        </section>
-
-        {renderRecentlyPlayedSection()}
-        {message && <p className="status-message">{message}</p>}
-      </>
+      <DashboardLayout
+        hero={
+          <HeroSection
+            greeting={greeting}
+            name="Music and Memories"
+            subtitle="Pick your next spin."
+            extra={<HomeTrackSearch onOpenAlbum={openAlbum} />}
+          />
+        }
+        stats={<CollectionStats items={dashboardStats} />}
+        continueListening={
+          <ContinueListening
+            albums={continueListeningAlbums}
+            onSelect={openAlbum}
+            onArtistClick={openArtistView}
+          />
+        }
+        recentlyAdded={<RecentlyAdded albums={latestArrivalAlbums} onSelect={handleLatestArrivalSelect} />}
+        tonightsPick={
+          <TonightsPick
+            album={tonightAlbum}
+            isFavorite={Boolean(tonightSavedDetails.favorite)}
+            onOpenAlbum={openAlbum}
+            onOpenYouTubeMusic={handleOpenYouTubeMusic}
+            onToggleFavorite={handleToggleTonightFavorite}
+          />
+        }
+        randomMemory={
+          <RandomMemory
+            memoryEntry={randomMemoryEntry}
+            onOpenAlbum={openAlbum}
+            onArtistClick={openArtistView}
+          />
+        }
+        bottomPlayer={<BottomPlayer album={tonightAlbum} onOpenYouTubeMusic={handleOpenYouTubeMusic} />}
+      />
     );
   }
 
-  function CollectionPage() {
+  function renderCollectionPage() {
     return (
       <>
         <div className="app-toolbar app-toolbar--search">
@@ -925,10 +2098,6 @@ function App() {
             onChange={(event) => setSearch(event.target.value)}
             className="collection-search"
           />
-
-          <button onClick={testDiscogs} className="collection-button">
-            Test Discogs
-          </button>
 
           <select
             value={collectionSort}
@@ -943,6 +2112,27 @@ function App() {
             <option value="year-newest">Year (Newest)</option>
             <option value="year-oldest">Year (Oldest)</option>
           </select>
+
+          <div className="collection-view-toggle" role="tablist" aria-label="Collection view mode">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={collectionView === "grid"}
+              className={`collection-view-toggle__button${collectionView === "grid" ? " is-active" : ""}`}
+              onClick={() => setCollectionView("grid")}
+            >
+              Grid
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={collectionView === "crate"}
+              className={`collection-view-toggle__button${collectionView === "crate" ? " is-active" : ""}`}
+              onClick={() => setCollectionView("crate")}
+            >
+              Crate
+            </button>
+          </div>
         </div>
 
         <div className="filter-bar" role="toolbar" aria-label="Quick collection filters">
@@ -959,8 +2149,29 @@ function App() {
           ))}
         </div>
 
+        <div className="alphabet-filter-bar" role="toolbar" aria-label="Filter by artist initial">
+          {LETTER_FILTERS.map((letter) => (
+            <button
+              key={letter}
+              type="button"
+              className={`alphabet-filter-chip${collectionLetter === letter ? " is-active" : ""}`}
+              onClick={() => setCollectionLetter(letter)}
+            >
+              {letter}
+            </button>
+          ))}
+        </div>
+
+        <p className="collection-artwork-progress" aria-live="polite">
+          {collectionFilterLabel}: {collectionArtworkProgress.loaded}/{collectionArtworkProgress.total} loaded • {collectionArtworkProgress.loading} loading • {collectionArtworkProgress.pending} pending • {collectionArtworkProgress.failed} failed • {collectionArtworkProgress.missing} no artwork
+        </p>
+
         {message && <p className="status-message">{message}</p>}
-        {renderAlbumGrid(sortedCollectionRecords, "Premium dark glass collection view", true)}
+        <div className="collection-page-compact">
+          {collectionView === "crate"
+            ? renderAlbumCrate(sortedCollectionRecords, "Vinyl crate view", true)
+            : renderAlbumGrid(sortedCollectionRecords, "Premium dark glass collection view", true)}
+        </div>
       </>
     );
   }
@@ -978,13 +2189,114 @@ function App() {
   }
 
   function TopRatedPage() {
+    const collectionByArtistAlbum = useMemo(() => {
+      const lookup = new Map();
+
+      records.forEach((record) => {
+        const artist = normalizeMatchText(record.Artist);
+        const album = normalizeMatchText(record.Title);
+
+        if (!artist || !album) {
+          return;
+        }
+
+        lookup.set(`${artist}|||${album}`, record);
+      });
+
+      return lookup;
+    }, [records]);
+
+    const rollingStoneRows = useMemo(() => {
+      return rollingStoneList
+        .map((entry, index) => {
+          const key = `${normalizeMatchText(entry.artist)}|||${normalizeMatchText(entry.album)}`;
+          const ownedRecord = collectionByArtistAlbum.get(key) || null;
+          const rankValue = Number.parseInt(entry.rank, 10);
+          const rank = Number.isFinite(rankValue) ? rankValue : index + 1;
+
+          return {
+            ...entry,
+            rank,
+            ownedRecord,
+          };
+        })
+        .sort((firstEntry, secondEntry) => firstEntry.rank - secondEntry.rank);
+    }, [rollingStoneList, collectionByArtistAlbum]);
+
+    const ownedCount = rollingStoneRows.filter((entry) => Boolean(entry.ownedRecord)).length;
+
     return (
       <section className="page-section">
         <div className="section-heading">
           <p className="section-heading__eyebrow">Best Rated</p>
-          <h2 className="section-heading__title">⭐ 5-Star Albums</h2>
+          <h2 className="section-heading__title">⭐ Top Rated Albums</h2>
         </div>
         {renderAlbumGrid(topRatedRecords, "Albums rated 5 stars")}
+
+        <section className="rolling-stone-panel glass-panel" aria-label="Rolling Stone Top 500 tracker">
+          <div className="rolling-stone-panel__header">
+            <div>
+              <p className="section-heading__eyebrow">Collection Tracker</p>
+              <h3 className="rolling-stone-panel__title">Rolling Stone Top 500</h3>
+              <p className="rolling-stone-panel__meta">
+                {rollingStoneRows.length ? `${ownedCount}/${rollingStoneRows.length} owned` : "Import your list to start tracking"}
+              </p>
+            </div>
+
+            <div className="rolling-stone-panel__actions">
+              {!rollingStoneRows.length ? (
+                <button type="button" className="collection-button" onClick={importRollingStoneListOnline}>
+                  Import Current Top 500 Online
+                </button>
+              ) : null}
+              {rollingStoneRows.length ? (
+                <button type="button" className="surprise-button" onClick={clearRollingStoneList}>
+                  Clear List
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          <p className="rolling-stone-panel__hint">
+            Pulls the current public Top 500 list online, then marks what you own.
+          </p>
+
+          {rollingStoneStatus ? <p className="status-message">{rollingStoneStatus}</p> : null}
+
+          {rollingStoneRows.length ? (
+            <ul className="rolling-stone-panel__list">
+              {rollingStoneRows.map((entry) => (
+                <li key={`${entry.rank}-${entry.artist}-${entry.album}`} className="rolling-stone-panel__item">
+                  <p className="rolling-stone-panel__rank">#{entry.rank}</p>
+                  <div className="rolling-stone-panel__copy">
+                    <p className="rolling-stone-panel__album">{entry.album}</p>
+                    <p className="rolling-stone-panel__artist">{entry.artist}</p>
+                  </div>
+                  <div className="rolling-stone-panel__state">
+                    {entry.ownedRecord ? (
+                      <>
+                        <span className="rolling-stone-panel__owned" aria-label="Owned">
+                          ✓
+                        </span>
+                        <button
+                          type="button"
+                          className="collection-button"
+                          onClick={() => openAlbum(entry.ownedRecord)}
+                        >
+                          Open
+                        </button>
+                      </>
+                    ) : (
+                      <span className="rolling-stone-panel__missing" aria-label="Missing">
+                        ○
+                      </span>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
       </section>
     );
   }
@@ -1044,6 +2356,7 @@ function App() {
           getAlbumKey={getAlbumKey}
           getRecordListKey={getRecordListKey}
           getArtworkEntry={getArtworkEntry}
+          onAlbumVisible={handleAlbumCardVisible}
           onAlbumOpen={openAlbum}
           onBack={closeArtistView}
           onArtistClick={openArtistView}
@@ -1052,6 +2365,10 @@ function App() {
     }
 
     return <ArtistsDirectoryView records={records} onArtistClick={openArtistView} />;
+  }
+
+  function DuplicatesPage() {
+    return <DuplicateDetectorPage records={records} onOpenAlbum={openAlbum} />;
   }
 
   return (
@@ -1065,6 +2382,7 @@ function App() {
                 <li key={item.to}>
                   <NavLink
                     to={item.to}
+                    onClick={dismissAlbumModalForNavigation}
                     className={({ isActive }) => `app-nav__button${isActive ? " is-active" : ""}`}
                   >
                     {item.label}
@@ -1078,16 +2396,21 @@ function App() {
         <div className="app-shell__inner">
           <header className="app-hero">
             <p className="app-kicker">Music & Memories</p>
-            <h1 className="app-title">📦 Music & Memories</h1>
+            <h1 className="app-title">
+              <img src={mmMonogramLogo} alt="M&amp;M" className="app-title__logo" />
+              <span>Music &amp; Memories</span>
+            </h1>
             <p className="app-tagline">Every record has a story.</p>
           </header>
 
           <Routes>
             <Route path="/" element={<Navigate to="/home" replace />} />
             <Route path="/home" element={<HomePage />} />
-            <Route path="/collection" element={<CollectionPage />} />
+            <Route path="/collection" element={renderCollectionPage()} />
+            <Route path="/add-music" element={<AddMusicPage onAddRecord={addRecordToCollection} />} />
             <Route path="/artists" element={<ArtistsRoute />} />
             <Route path="/artists/:artistName" element={<ArtistsRoute />} />
+            <Route path="/duplicates" element={<DuplicatesPage />} />
             <Route path="/favourites" element={<FavouritesPage />} />
             <Route path="/top-rated" element={<TopRatedPage />} />
             <Route
@@ -1104,10 +2427,19 @@ function App() {
             <Route
               path="/settings"
               element={
-                <PlaceholderPage
-                  title="⚙ Settings"
-                  eyebrow="Coming Soon"
-                  description="Application settings and personalization controls are prepared for upcoming builds."
+                <SettingsPage
+                  backupSummary={{
+                    addedRecords: addedRecords.length,
+                    albumNotes: Object.keys(savedAlbumDetails).length,
+                    recentlyViewed: recentlyViewed.length,
+                    customArtwork: Object.keys(customArtworkByAlbumKey).length,
+                    rollingStoneEntries: rollingStoneList.length,
+                  }}
+                  onExportBackup={exportLibraryBackup}
+                  onImportBackup={importLibraryBackup}
+                  onClearRecentlyViewed={clearRecentlyViewedHistory}
+                  onClearRollingStoneTracker={clearRollingStoneTracker}
+                  onForceRefreshApp={forceRefreshApp}
                 />
               }
             />
@@ -1118,6 +2450,7 @@ function App() {
               <NavLink
                 key={item.to}
                 to={item.to}
+                onClick={dismissAlbumModalForNavigation}
                 className={({ isActive }) =>
                   `app-nav__button app-nav__button--mobile${isActive ? " is-active" : ""}`
                 }
@@ -1128,11 +2461,18 @@ function App() {
           </nav>
 
           <AlbumModal
-            album={selectedAlbum}
+            album={selectedAlbum && selectedAlbum.__openPathname === location.pathname ? selectedAlbum : null}
             onClose={closeAlbum}
             onSave={saveAlbumDetails}
             onMetadataChange={saveAlbumMetadata}
             onArtistClick={openArtistView}
+            onCustomArtworkUpload={saveCustomArtwork}
+            onCustomArtworkRemove={clearCustomArtwork}
+            hasCustomArtwork={Boolean(
+              selectedAlbum
+              && selectedAlbum.__openPathname === location.pathname
+              && customArtworkByAlbumKey[selectedAlbum.albumKey]
+            )}
           />
         </div>
       </div>

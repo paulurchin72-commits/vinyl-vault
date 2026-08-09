@@ -1,0 +1,14 @@
+<svg width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="80" cy="80" r="69" fill="#090909" stroke="#F5C542" stroke-width="6"/>
+  <circle cx="80" cy="80" r="58" stroke="#F5C542" stroke-opacity="0.22" stroke-width="1.5"/>
+  <text
+    x="80"
+    y="89"
+    text-anchor="middle"
+    fill="#F5C542"
+    font-family="Cormorant Garamond, Georgia, serif"
+    font-size="48"
+    font-weight="700"
+    letter-spacing="-3"
+  >M&amp;M</text>
+</svg>

@@ -1,163 +1,235 @@
-function createArtworkStorageAdapter() {
+import { getArtwork } from "./artworkCache";
+import { syncArtworkBatch } from "./artworkSync";
+
+function getAlbumKey(album) {
+  return album.albumKey || album.release_id || `${album.Artist}-${album.Title}-${album.Released}`;
+}
+
+function createDefaultEntry() {
   return {
-    loadSnapshot() {
-      return {};
-    },
-    saveEntry() {
-      // Reserved for future localStorage-backed artwork persistence.
-    },
+    status: "idle",
+    coverUrl: null,
+    releaseData: null,
+    error: null,
   };
 }
 
-function createArtworkManager(storage = createArtworkStorageAdapter()) {
-  const cache = new Map(Object.entries(storage.loadSnapshot()));
-  const inflightRequests = new Map();
-  const queuedAlbums = new Set();
-  const queue = [];
-  const listeners = new Set();
-  const maxConcurrentRequests = 2;
-  let activeRequests = 0;
+function createArtworkManager() {
+  const albumCache = new Map();
+  const releaseCache = new Map();
+  const objectUrlCache = new Map();
+  const maxObjectUrls = 180;
+  const syncQueue = [];
+  const maxConcurrentSyncs = 2;
+  let activeSyncs = 0;
 
-  function createDefaultEntry() {
-    return {
-      status: "idle",
-      coverUrl: null,
-      releaseData: null,
-      error: null,
-    };
+  function touchObjectUrl(releaseId, objectUrl) {
+    if (objectUrlCache.has(releaseId)) {
+      objectUrlCache.delete(releaseId);
+    }
+
+    objectUrlCache.set(releaseId, objectUrl);
+
+    while (objectUrlCache.size > maxObjectUrls) {
+      const oldestEntry = objectUrlCache.entries().next().value;
+      if (!oldestEntry) {
+        break;
+      }
+
+      const [oldestReleaseId, oldestObjectUrl] = oldestEntry;
+      objectUrlCache.delete(oldestReleaseId);
+
+      if (typeof URL !== "undefined" && oldestObjectUrl) {
+        URL.revokeObjectURL(oldestObjectUrl);
+      }
+    }
   }
 
-  function notify() {
-    const snapshot = Object.fromEntries(cache.entries());
-    listeners.forEach((listener) => listener(snapshot));
+  function queueSyncTask(task) {
+    return new Promise((resolve, reject) => {
+      syncQueue.push({ task, resolve, reject });
+      flushSyncQueue();
+    });
+  }
+
+  function flushSyncQueue() {
+    while (activeSyncs < maxConcurrentSyncs && syncQueue.length) {
+      const nextTask = syncQueue.shift();
+      activeSyncs += 1;
+
+      Promise.resolve()
+        .then(nextTask.task)
+        .then(nextTask.resolve, nextTask.reject)
+        .finally(() => {
+          activeSyncs -= 1;
+          flushSyncQueue();
+        });
+    }
+  }
+
+  async function getCachedArtworkUrl(releaseId) {
+    if (objectUrlCache.has(releaseId)) {
+      const cachedObjectUrl = objectUrlCache.get(releaseId);
+      touchObjectUrl(releaseId, cachedObjectUrl);
+      return cachedObjectUrl;
+    }
+
+    const blob = await getArtwork(releaseId).catch(() => null);
+    if (!blob) {
+      return null;
+    }
+
+    const objectUrl = URL.createObjectURL(blob);
+    touchObjectUrl(releaseId, objectUrl);
+    return objectUrl;
+  }
+
+  async function syncReleaseArtwork(releaseId) {
+    return queueSyncTask(async () => {
+      const progress = await syncArtworkBatch([{ release_id: releaseId }]);
+      const artworkUrl = await getCachedArtworkUrl(releaseId);
+
+      return {
+        artworkUrl,
+        result: progress.results[0] || null,
+      };
+    });
+  }
+
+  function getSnapshot() {
+    return Object.fromEntries(albumCache.entries());
   }
 
   function getEntry(albumKey) {
-    return cache.get(albumKey) || createDefaultEntry();
+    return albumCache.get(albumKey) || createDefaultEntry();
   }
 
-  function setEntry(albumKey, nextEntry) {
-    cache.set(albumKey, nextEntry);
-    storage.saveEntry(albumKey, nextEntry);
-    notify();
-    return nextEntry;
+  function setAlbumEntry(albumKey, entry) {
+    albumCache.set(albumKey, entry);
+    return entry;
   }
 
-  function mergeReleaseData(entry, releaseData) {
+  function buildFinalEntry(releaseData) {
     return {
-      status: releaseData.thumb ? "loaded" : "missing",
-      coverUrl: releaseData.thumb || null,
-      releaseData,
+      status: releaseData?.thumb ? "loaded" : "missing",
+      coverUrl: releaseData?.thumb || null,
+      releaseData: releaseData || null,
       error: null,
-      fetchedAt: Date.now(),
     };
   }
 
-  async function ensureAlbumArtwork(album, fetchRelease) {
-    const albumKey = album.albumKey || album.release_id || `${album.Artist}-${album.Title}-${album.Released}`;
+  function ensureAlbumArtwork(album, fetchRelease) {
+    const albumKey = getAlbumKey(album);
     const currentEntry = getEntry(albumKey);
 
-    if (["loaded", "missing"].includes(currentEntry.status)) {
-      return currentEntry;
+    if (currentEntry.status === "loaded" || currentEntry.status === "missing") {
+      return Promise.resolve(currentEntry);
     }
 
-    if (inflightRequests.has(albumKey)) {
-      return inflightRequests.get(albumKey);
+    const releaseId = album.release_id ? String(album.release_id).trim() : "";
+
+    if (!releaseId) {
+      return Promise.resolve(
+        setAlbumEntry(albumKey, {
+          ...currentEntry,
+          status: "missing",
+          coverUrl: null,
+          error: null,
+        })
+      );
     }
 
-    if (!album.release_id) {
-      return setEntry(albumKey, {
-        ...currentEntry,
-        status: "missing",
-        coverUrl: null,
-        error: null,
-      });
+    const cachedRelease = releaseCache.get(releaseId);
+
+    if (cachedRelease) {
+      if (cachedRelease.status === "loading") {
+        setAlbumEntry(albumKey, {
+          ...currentEntry,
+          status: "loading",
+          error: null,
+        });
+
+        return cachedRelease.promise.then((entry) => setAlbumEntry(albumKey, entry));
+      }
+
+      return Promise.resolve(setAlbumEntry(albumKey, cachedRelease.entry));
     }
 
-    setEntry(albumKey, {
+    setAlbumEntry(albumKey, {
       ...currentEntry,
       status: "loading",
       error: null,
     });
 
-    const request = fetchRelease(album.release_id)
-      .then((releaseData) => setEntry(albumKey, mergeReleaseData(currentEntry, releaseData)))
-      .catch((error) =>
-        setEntry(albumKey, {
-          ...currentEntry,
-          status: "missing",
+    const request = getCachedArtworkUrl(releaseId)
+      .then(async (cachedArtworkUrl) => {
+        if (cachedArtworkUrl) {
+          const entry = buildFinalEntry({ thumb: cachedArtworkUrl });
+          releaseCache.set(releaseId, {
+            status: "ready",
+            entry,
+          });
+          return setAlbumEntry(albumKey, entry);
+        }
+
+        const syncOutcome = await syncReleaseArtwork(releaseId);
+        if (syncOutcome.artworkUrl) {
+          const entry = buildFinalEntry({ thumb: syncOutcome.artworkUrl });
+          releaseCache.set(releaseId, {
+            status: "ready",
+            entry,
+          });
+          return setAlbumEntry(albumKey, entry);
+        }
+
+        if (syncOutcome.result?.status === "unavailable") {
+          const entry = buildFinalEntry(null);
+          releaseCache.set(releaseId, {
+            status: "ready",
+            entry,
+          });
+          return setAlbumEntry(albumKey, entry);
+        }
+
+        // Fall back to direct release metadata only if cache fill did not resolve the artwork.
+        return fetchRelease(releaseId, {
+          artist: album.Artist,
+          title: album.Title,
+          year: album.Released,
+        }).then((releaseData) => {
+          const entry = buildFinalEntry(releaseData);
+          releaseCache.set(releaseId, {
+            status: "ready",
+            entry,
+          });
+          return setAlbumEntry(albumKey, entry);
+        });
+      })
+      .catch((error) => {
+        const entry = {
+          status: "idle",
           coverUrl: null,
+          releaseData: null,
           error: error instanceof Error ? error.message : "Artwork unavailable",
-        })
-      )
-      .finally(() => {
-        inflightRequests.delete(albumKey);
+        };
+
+        releaseCache.delete(releaseId);
+
+        return setAlbumEntry(albumKey, entry);
       });
 
-    inflightRequests.set(albumKey, request);
+    releaseCache.set(releaseId, {
+      status: "loading",
+      promise: request,
+    });
 
     return request;
   }
 
-  function processQueue() {
-    while (activeRequests < maxConcurrentRequests && queue.length > 0) {
-      const nextJob = queue.shift();
-      const albumKey = nextJob.album.albumKey || nextJob.album.release_id || `${nextJob.album.Artist}-${nextJob.album.Title}-${nextJob.album.Released}`;
-
-      queuedAlbums.delete(albumKey);
-
-      if (["loaded", "missing", "loading"].includes(getEntry(albumKey).status)) {
-        continue;
-      }
-
-      activeRequests += 1;
-
-      Promise.resolve(ensureAlbumArtwork(nextJob.album, nextJob.fetchRelease)).finally(() => {
-        activeRequests -= 1;
-        window.setTimeout(processQueue, 0);
-      });
-    }
-  }
-
-  function queueArtwork(albums, fetchRelease, priority = "background") {
-    albums.forEach((album) => {
-      const albumKey = album.albumKey || album.release_id || `${album.Artist}-${album.Title}-${album.Released}`;
-
-      if (!albumKey || queuedAlbums.has(albumKey)) {
-        return;
-      }
-
-      if (["loaded", "missing", "loading"].includes(getEntry(albumKey).status)) {
-        return;
-      }
-
-      queuedAlbums.add(albumKey);
-
-      if (priority === "priority") {
-        queue.unshift({ album, fetchRelease });
-      } else {
-        queue.push({ album, fetchRelease });
-      }
-    });
-
-    window.setTimeout(processQueue, 0);
-  }
-
   return {
-    getSnapshot() {
-      return Object.fromEntries(cache.entries());
-    },
+    getSnapshot,
     getEntry,
-    subscribe(listener) {
-      listeners.add(listener);
-      listener(Object.fromEntries(cache.entries()));
-
-      return () => {
-        listeners.delete(listener);
-      };
-    },
     ensureAlbumArtwork,
-    queueArtwork,
   };
 }
 

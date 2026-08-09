@@ -1,21 +1,98 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { getRelease } from "../services/discogs";
 
-function AlbumModal({ album, onClose, onSave, onMetadataChange, onArtistClick }) {
+const MAX_CUSTOM_ARTWORK_DIMENSION = 800;
+const CUSTOM_ARTWORK_QUALITY = 0.78;
+
+function AlbumModal({
+  album,
+  onClose,
+  onSave,
+  onMetadataChange,
+  onArtistClick,
+  onCustomArtworkUpload,
+  onCustomArtworkRemove,
+  hasCustomArtwork,
+}) {
   const albumData = album || {};
-  const artwork = albumData.cover || albumData.thumb || null;
   const releaseYear = albumData.year || albumData.Released || "Unknown";
   const artworkStatus = albumData.artworkStatus || "idle";
   const [memory, setMemory] = useState(albumData.memory || "");
   const [favorite, setFavorite] = useState(Boolean(albumData.favorite));
   const [rating, setRating] = useState(albumData.rating || 5);
   const [saveMessage, setSaveMessage] = useState("");
+  const [uploadMessage, setUploadMessage] = useState("");
+  const [artworkUrls, setArtworkUrls] = useState({ front: null, rear: null });
+  const [artworkSide, setArtworkSide] = useState("front");
+  const [isArtworkResolved, setIsArtworkResolved] = useState(false);
+  const artworkInputRef = useRef(null);
 
   useEffect(() => {
     setMemory(albumData.memory || "");
     setFavorite(Boolean(albumData.favorite));
     setRating(albumData.rating || 5);
     setSaveMessage("");
+    setUploadMessage("");
+    setArtworkSide("front");
   }, [album]);
+
+  useEffect(() => {
+    let isCanceled = false;
+
+    async function loadArtworkUrl() {
+      const releaseId = album?.release_id;
+      const existingArtworkUrl = albumData.cover || albumData.thumb || null;
+      const hasExistingArtwork = Boolean(existingArtworkUrl);
+
+      if (!isCanceled) {
+        setArtworkUrls({ front: existingArtworkUrl, rear: null });
+        setIsArtworkResolved(hasExistingArtwork);
+      }
+
+      if (!releaseId) {
+        if (!isCanceled) {
+          if (!hasExistingArtwork) {
+            setArtworkUrls({ front: null, rear: null });
+          }
+          setIsArtworkResolved(true);
+        }
+        return;
+      }
+
+      try {
+        console.log("AlbumModal release_id:", releaseId);
+        const releaseData = await getRelease(releaseId, {
+          artist: albumData.Artist,
+          title: albumData.Title,
+          year: releaseYear,
+        });
+
+        const nextFrontArtworkUrl = releaseData?.image || releaseData?.thumb || null;
+        const nextRearArtworkUrl = releaseData?.rearImage || null;
+
+        if (!isCanceled) {
+          setArtworkUrls({
+            front: nextFrontArtworkUrl || existingArtworkUrl || null,
+            rear: nextRearArtworkUrl,
+          });
+        }
+      } catch {
+        if (!isCanceled && !hasExistingArtwork) {
+          setArtworkUrls({ front: null, rear: null });
+        }
+      } finally {
+        if (!isCanceled) {
+          setIsArtworkResolved(true);
+        }
+      }
+    }
+
+    loadArtworkUrl();
+
+    return () => {
+      isCanceled = true;
+    };
+  }, [album?.release_id, albumData.cover, albumData.thumb, albumData.Artist, albumData.Title, releaseYear]);
 
   if (!album) return null;
 
@@ -55,89 +132,147 @@ function AlbumModal({ album, onClose, onSave, onMetadataChange, onArtistClick })
     });
   }
 
+  function handleOpenYouTubeMusic() {
+    const search = `${albumData.Artist || ""} ${albumData.Title || ""}`.trim();
+    const encodedSearch = encodeURIComponent(search);
+    const url = `https://music.youtube.com/search?q=${encodedSearch}`;
+
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => reject(reader.error || new Error("Failed to read the selected image."));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function loadImage(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("Failed to decode selected artwork."));
+      image.src = dataUrl;
+    });
+  }
+
+  async function optimizeArtworkDataUrl(file) {
+    const originalDataUrl = await readFileAsDataUrl(file);
+    const image = await loadImage(originalDataUrl);
+
+    const longestSide = Math.max(image.width, image.height);
+    const scale = longestSide > MAX_CUSTOM_ARTWORK_DIMENSION
+      ? MAX_CUSTOM_ARTWORK_DIMENSION / longestSide
+      : 1;
+
+    const width = Math.max(1, Math.round(image.width * scale));
+    const height = Math.max(1, Math.round(image.height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      return originalDataUrl;
+    }
+
+    context.drawImage(image, 0, 0, width, height);
+
+    return canvas.toDataURL("image/jpeg", CUSTOM_ARTWORK_QUALITY);
+  }
+
+  function triggerArtworkUpload() {
+    artworkInputRef.current?.click();
+  }
+
+  async function handleArtworkUpload(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setUploadMessage("Please upload a valid image file.");
+      return;
+    }
+
+    try {
+      const artworkDataUrl = await optimizeArtworkDataUrl(file);
+
+      if (!artworkDataUrl) {
+        setUploadMessage("Failed to process the selected image.");
+        return;
+      }
+
+      onCustomArtworkUpload?.(album, artworkDataUrl);
+      setArtworkUrls((currentArtworkUrls) => ({
+        ...currentArtworkUrls,
+        front: artworkDataUrl,
+      }));
+      setIsArtworkResolved(true);
+      setUploadMessage("Custom artwork applied (optimized for performance).");
+    } catch {
+      setUploadMessage("Failed to upload artwork. Try another image.");
+    }
+  }
+
+  function handleRemoveCustomArtwork() {
+    onCustomArtworkRemove?.(album);
+    setUploadMessage("Custom artwork removed.");
+  }
+
   const genre = albumData.genres || albumData.genre || "";
+  const activeArtworkUrl = artworkSide === "rear" && artworkUrls.rear
+    ? artworkUrls.rear
+    : artworkUrls.front;
+  const hasRearArtwork = Boolean(artworkUrls.rear);
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.82)",
-        backdropFilter: "blur(12px)",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        zIndex: 1000,
-        padding: "24px",
-      }}
-      onClick={onClose}
-    >
-      <div
-        onClick={(event) => event.stopPropagation()}
-        style={{
-          background: "linear-gradient(180deg, rgba(31,31,31,0.98) 0%, rgba(18,18,18,0.98) 100%)",
-          border: "1px solid rgba(255,255,255,0.12)",
-          borderRadius: "24px",
-          width: "100%",
-          maxWidth: "860px",
-          padding: "28px",
-          color: "white",
-          boxShadow: "0 30px 80px rgba(0,0,0,0.55)",
-          position: "relative",
-        }}
-      >
+    <div className="album-modal" onClick={onClose}>
+      <div className="album-modal__dialog" onClick={(event) => event.stopPropagation()}>
         <button
           onClick={onClose}
           aria-label="Close album details"
-          style={{
-            position: "absolute",
-            top: "18px",
-            right: "18px",
-            border: "1px solid rgba(255,255,255,0.12)",
-            background: "rgba(255,255,255,0.08)",
-            color: "white",
-            borderRadius: "999px",
-            width: "42px",
-            height: "42px",
-            fontSize: "18px",
-            cursor: "pointer",
-          }}
+          className="album-modal__close"
         >
           ×
         </button>
 
-        <div
-          style={{
-            display: "flex",
-            gap: "28px",
-            alignItems: "flex-start",
-            flexWrap: "wrap",
-          }}
-        >
+        <div className="album-modal__layout">
           <div
-            style={{
-              width: "min(100%, 420px)",
-              aspectRatio: "1 / 1",
-              flexShrink: 0,
-              borderRadius: "28px",
-              overflow: "hidden",
-              background: "linear-gradient(135deg, #222 0%, #111 100%)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              boxShadow: "0 20px 40px rgba(0,0,0,0.4)",
+            className="album-modal__art"
+            role="button"
+            tabIndex={0}
+            onDoubleClick={triggerArtworkUpload}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                triggerArtworkUpload();
+              }
             }}
+            aria-label="Album artwork. Double click to upload custom artwork."
           >
-            {artwork ? (
+            <input
+              ref={artworkInputRef}
+              type="file"
+              accept="image/*"
+              className="album-modal__artwork-input"
+              onChange={handleArtworkUpload}
+            />
+            {activeArtworkUrl ? (
               <img
-                src={artwork}
-                alt={albumData.Title}
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  display: "block",
-                }}
+                src={activeArtworkUrl}
+                alt={artworkSide === "rear"
+                  ? `${albumData.Title || albumData.title || "Album"} rear artwork`
+                  : albumData.Title || albumData.title || "Album artwork"}
+                className="album-modal__image"
               />
-            ) : artworkStatus === "loading" ? (
+            ) : !isArtworkResolved && artworkStatus === "loading" ? (
               <div className="artwork-state artwork-state--loading artwork-state--modal" aria-label="Loading artwork">
                 <span className="artwork-spinner" />
                 <span className="artwork-state__label">Loading artwork</span>
@@ -149,21 +284,35 @@ function AlbumModal({ album, onClose, onSave, onMetadataChange, onArtistClick })
               </div>
             )}
           </div>
+          <p className="album-modal__artwork-hint">Double-click cover art to upload your own image.</p>
 
-          <div style={{ flex: "1 1 320px", minWidth: 0, textAlign: "left" }}>
-            <p
-              style={{
-                margin: 0,
-                color: "#f5c542",
-                letterSpacing: "0.18em",
-                textTransform: "uppercase",
-                fontSize: "12px",
-              }}
-            >
+          {hasRearArtwork ? (
+            <div className="album-modal__artwork-toggle" aria-label="Artwork side toggle">
+              <button
+                type="button"
+                className={`album-modal__artwork-toggle-button${artworkSide === "front" ? " is-active" : ""}`}
+                onClick={() => setArtworkSide("front")}
+                aria-pressed={artworkSide === "front"}
+              >
+                Front
+              </button>
+              <button
+                type="button"
+                className={`album-modal__artwork-toggle-button${artworkSide === "rear" ? " is-active" : ""}`}
+                onClick={() => setArtworkSide("rear")}
+                aria-pressed={artworkSide === "rear"}
+              >
+                Rear
+              </button>
+            </div>
+          ) : null}
+
+          <div className="album-modal__content">
+            <p className="album-modal__eyebrow">
               Album Details
             </p>
 
-            <h1 style={{ marginTop: "10px", marginBottom: "8px" }}>
+            <h1 className="album-modal__artist">
               <button
                 type="button"
                 className="artist-link-button artist-link-button--modal"
@@ -173,155 +322,106 @@ function AlbumModal({ album, onClose, onSave, onMetadataChange, onArtistClick })
               </button>
             </h1>
 
-            <h2
-              style={{
-                fontWeight: "normal",
-                color: "#cccccc",
-                marginBottom: "18px",
-              }}
-            >
+            <h2 className="album-modal__title">
               {albumData.Title}
             </h2>
 
-            <p style={{ color: "#ddd", marginBottom: "18px" }}>
+            <p className="album-modal__meta album-modal__meta--primary">
               <strong>Release Year:</strong> {releaseYear}
             </p>
 
             {albumData.label ? (
-              <p style={{ color: "#ddd", marginBottom: "10px" }}>
+              <p className="album-modal__meta">
                 <strong>Label:</strong> {albumData.label}
               </p>
             ) : null}
 
             {genre ? (
-              <p style={{ color: "#ddd", marginBottom: "10px" }}>
+              <p className="album-modal__meta">
                 <strong>Genre:</strong> {genre}
               </p>
             ) : null}
 
-            <hr
-              style={{
-                borderColor: "rgba(255,255,255,0.12)",
-                margin: "20px 0 24px",
-              }}
-            />
+            <hr className="album-modal__rule" />
 
-            <div
-              style={{
-                display: "flex",
-                gap: "12px",
-                flexWrap: "wrap",
-                alignItems: "center",
-                marginBottom: "18px",
-              }}
-            >
+            <div className="album-modal__actions">
               <button
                 onClick={handleFavoriteToggle}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: "999px",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: favorite ? "rgba(255, 90, 95, 0.16)" : "rgba(255,255,255,0.06)",
-                  color: favorite ? "#ff5a5f" : "white",
-                  cursor: "pointer",
-                  fontWeight: "bold",
-                }}
+                className={`album-modal__pill${favorite ? " is-active" : ""}`}
               >
                 ❤️ Favourite {favorite ? "On" : "Off"}
               </button>
 
-              <div
-                style={{
-                  display: "flex",
-                  gap: "6px",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                }}
-              >
+              <div className="album-modal__rating">
                 {[1, 2, 3, 4, 5].map((value) => (
                   <button
                     key={value}
                     type="button"
                     onClick={() => handleRatingChange(value)}
                     aria-label={`${value} star rating`}
-                    style={{
-                      border: "none",
-                      background: "transparent",
-                      color: value <= rating ? "#f5c542" : "#6b6b6b",
-                      fontSize: "18px",
-                      cursor: "pointer",
-                      padding: 0,
-                    }}
+                    className={`album-modal__star${value <= rating ? " is-active" : ""}`}
                   >
                     ★
                   </button>
                 ))}
-                <span style={{ color: "#bbb", fontSize: "14px" }}>
+                <span className="album-modal__rating-text">
                   {rating}/5
                 </span>
               </div>
             </div>
 
-            <h3 style={{ marginBottom: "12px" }}>📝 My Memory</h3>
+            <h3 className="album-modal__memory-title">📝 My Memory</h3>
 
             <textarea
               placeholder="Write your memory of this album..."
               value={memory}
               onChange={(event) => setMemory(event.target.value)}
-              style={{
-                width: "100%",
-                minHeight: "150px",
-                boxSizing: "border-box",
-                background: "#2a2a2a",
-                color: "white",
-                border: "1px solid #444",
-                borderRadius: "14px",
-                padding: "12px",
-                resize: "vertical",
-                fontFamily: "inherit",
-                fontSize: "16px",
-              }}
+              className="album-modal__textarea"
             />
 
             {saveMessage ? (
-              <p style={{ color: "#f5c542", marginTop: "10px" }}>{saveMessage}</p>
+              <p className="album-modal__save-message">{saveMessage}</p>
             ) : null}
 
-            <div
-              style={{
-                display: "flex",
-                gap: "12px",
-                flexWrap: "wrap",
-                marginTop: "20px",
-              }}
-            >
+            {uploadMessage ? <p className="album-modal__save-message">{uploadMessage}</p> : null}
+
+            <div className="album-modal__footer">
+              <button
+                type="button"
+                onClick={triggerArtworkUpload}
+                className="album-modal__button album-modal__button--secondary"
+              >
+                Upload Artwork
+              </button>
+
+              {hasCustomArtwork ? (
+                <button
+                  type="button"
+                  onClick={handleRemoveCustomArtwork}
+                  className="album-modal__button album-modal__button--secondary"
+                >
+                  Remove Custom Art
+                </button>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={handleOpenYouTubeMusic}
+                className="album-modal__button album-modal__button--secondary"
+              >
+                ▶ Listen on YouTube Music
+              </button>
+
               <button
                 onClick={handleSave}
-                style={{
-                  padding: "12px 22px",
-                  background: "#f5c542",
-                  color: "#111",
-                  border: "none",
-                  borderRadius: "12px",
-                  cursor: "pointer",
-                  fontWeight: "bold",
-                  boxShadow: "0 10px 20px rgba(245,197,66,0.18)",
-                }}
+                className="album-modal__button album-modal__button--primary"
               >
                 Save
               </button>
 
               <button
                 onClick={onClose}
-                style={{
-                  padding: "12px 22px",
-                  background: "rgba(255,255,255,0.08)",
-                  color: "white",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  borderRadius: "12px",
-                  cursor: "pointer",
-                  fontWeight: "bold",
-                }}
+                className="album-modal__button album-modal__button--secondary"
               >
                 Close
               </button>

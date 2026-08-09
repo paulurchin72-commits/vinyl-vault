@@ -1,14 +1,22 @@
+import { useEffect, useRef } from "react";
+
 function AlbumCard({
   record,
   cover,
   onClick = () => {},
   onArtistClick = () => {},
+  onVisible = () => {},
   id,
   highlighted = false,
   favorite = false,
   rating = 0,
   artworkStatus = "idle",
 }) {
+  const cardRef = useRef(null);
+  const hasTriggeredVisibility = useRef(false);
+  const retryCountRef = useRef(0);
+  const maxRetryAttempts = 2;
+
   function handleKeyDown(event) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -21,8 +29,101 @@ function AlbumCard({
     onArtistClick(record.Artist);
   }
 
+  const albumKey = record.albumKey || record.release_id || `${record.Artist}-${record.Title}-${record.Released}`;
+  const traceStore = typeof globalThis !== "undefined" ? globalThis : null;
+  const isTracedAlbum =
+    traceStore?.__MM_TRACE_FIRST_ALBUM__?.albumKey === albumKey ||
+    traceStore?.__MM_TRACE_SUCCESS_ALBUM__?.albumKey === albumKey;
+
+  useEffect(() => {
+    hasTriggeredVisibility.current = false;
+    retryCountRef.current = 0;
+  }, [albumKey]);
+
+  useEffect(() => {
+    const node = cardRef.current;
+
+    if (!node || hasTriggeredVisibility.current) {
+      return undefined;
+    }
+
+    if (typeof IntersectionObserver === "undefined") {
+      hasTriggeredVisibility.current = true;
+      onVisible(record);
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const firstEntry = entries[0];
+
+        if (!firstEntry?.isIntersecting || hasTriggeredVisibility.current) {
+          return;
+        }
+
+        hasTriggeredVisibility.current = true;
+        onVisible(record);
+        observer.disconnect();
+      },
+      {
+        rootMargin: "480px 0px",
+        threshold: 0.01,
+      }
+    );
+
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [onVisible, record]);
+
+  useEffect(() => {
+    if (cover || artworkStatus !== "idle") {
+      return undefined;
+    }
+
+    if (retryCountRef.current >= maxRetryAttempts) {
+      return undefined;
+    }
+
+    const node = cardRef.current;
+    if (!node) {
+      return undefined;
+    }
+
+    const bounds = node.getBoundingClientRect();
+    const isNearViewport = bounds.bottom >= -200 && bounds.top <= window.innerHeight + 200;
+
+    if (!isNearViewport) {
+      return undefined;
+    }
+
+    const retryDelayMs = 1400 + retryCountRef.current * 800;
+    const retryTimerId = window.setTimeout(() => {
+      hasTriggeredVisibility.current = false;
+      retryCountRef.current += 1;
+      onVisible(record);
+    }, retryDelayMs);
+
+    return () => {
+      window.clearTimeout(retryTimerId);
+    };
+  }, [cover, artworkStatus, onVisible, record]);
+
+  if (isTracedAlbum) {
+    if (traceStore.__MM_TRACE_LAST_ALBUM_CARD_COVER__ !== cover) {
+      traceStore.__MM_TRACE_LAST_ALBUM_CARD_COVER__ = cover;
+      console.log("[MM TRACE] 6.AlbumCard cover", {
+        albumKey,
+        cover,
+      });
+    }
+  }
+
   return (
     <li
+      ref={cardRef}
       id={id}
       onClick={() => onClick(record)}
       onKeyDown={handleKeyDown}
@@ -36,6 +137,8 @@ function AlbumCard({
             src={cover}
             alt={record.Title}
             className="album-card__image"
+            loading="lazy"
+            decoding="async"
           />
         ) : artworkStatus === "loading" ? (
           <div className="artwork-state artwork-state--loading" aria-label="Loading artwork">
