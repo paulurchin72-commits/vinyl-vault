@@ -71,6 +71,7 @@ const CUSTOM_ARTWORK_KEY = "the-memory-box:custom-artwork";
 const ROLLING_STONE_LIST_KEY = "the-memory-box:rolling-stone-top-500";
 const MANUAL_COLLECTION_WORTH_KEY = "the-memory-box:manual-collection-worth";
 const WORTH_BY_RELEASE_KEY = "the-memory-box:worth-by-release";
+const WORTH_AUTO_FULL_REPRICE_KEY = "the-memory-box:worth-auto-full-reprice";
 const ROLLING_STONE_GIST_API = "https://api.github.com/gists/232302a4ba29fd8f5f0d0352ef55d2b9";
 const RECENTLY_VIEWED_LIMIT = 10;
 const WORTH_REFRESH_BATCH_SIZE = 24;
@@ -677,6 +678,9 @@ function App() {
     total: 0,
     mode: "batch",
   });
+  const [worthAutoFullReprice, setWorthAutoFullReprice] = useState(() =>
+    Boolean(loadStoredJson(WORTH_AUTO_FULL_REPRICE_KEY, false))
+  );
   const [worthByRelease, setWorthByRelease] = useState(() =>
     normalizeWorthByRelease(loadStoredJson(WORTH_BY_RELEASE_KEY, {}))
   );
@@ -1271,20 +1275,20 @@ function App() {
         return;
       }
 
-      await loadCollectionWorthEstimate({ refresh: true });
+      await loadCollectionWorthEstimate({ refresh: true, forceAll: worthAutoFullReprice });
     }
 
     void fetchWorthData();
 
     const intervalId = window.setInterval(() => {
-      void loadCollectionWorthEstimate({ refresh: true });
+      void loadCollectionWorthEstimate({ refresh: true, forceAll: worthAutoFullReprice });
     }, WORTH_REFRESH_INTERVAL_MS);
 
     return () => {
       isMounted = false;
       window.clearInterval(intervalId);
     };
-  }, [records]);
+  }, [records, worthAutoFullReprice]);
 
   const filteredRecords = searchMatchedRecords.filter((record) =>
     recordMatchesFilter(record, activeFilter)
@@ -2142,7 +2146,18 @@ function App() {
     function openWorthDetails() {
       setWorthDetailsOpen(true);
       if (!worthLoading && !worthRankedAlbums.length && !collectionWorthEstimate.sampled) {
-        void loadCollectionWorthEstimate();
+        void loadCollectionWorthEstimate({ refresh: true, forceAll: worthAutoFullReprice });
+      }
+    }
+
+    function toggleAutoFullReprice() {
+      const nextValue = !worthAutoFullReprice;
+      setWorthAutoFullReprice(nextValue);
+
+      try {
+        localStorage.setItem(WORTH_AUTO_FULL_REPRICE_KEY, JSON.stringify(nextValue));
+      } catch {
+        // Ignore storage failures and keep in-memory toggle state.
       }
     }
 
@@ -2287,6 +2302,13 @@ function App() {
                   disabled={worthLoading}
                 >
                   {worthLoading ? "Working…" : "Full reprice all"}
+                </button>
+                <button
+                  type="button"
+                  className="surprise-button"
+                  onClick={toggleAutoFullReprice}
+                >
+                  {worthAutoFullReprice ? "Auto full reprice: ON" : "Auto full reprice: OFF"}
                 </button>
               </div>
 
@@ -2437,6 +2459,23 @@ function App() {
   }
 
   function TopRatedPage() {
+    function openStoreSearch(entry, store) {
+      const searchQuery = encodeURIComponent(`${entry.artist} ${entry.album} vinyl`);
+
+      const storeUrls = {
+        amazon: `https://www.amazon.co.uk/s?k=${searchQuery}`,
+        hmv: `https://hmv.com/search?searchtext=${searchQuery}`,
+        rarewaves: `https://www.rarewaves.com/search?q=${searchQuery}`,
+      };
+
+      const storeUrl = storeUrls[store];
+      if (!storeUrl) {
+        return;
+      }
+
+      window.open(storeUrl, "_blank", "noopener,noreferrer");
+    }
+
     const collectionByArtistAlbum = (() => {
       const lookup = new Map();
 
@@ -2535,9 +2574,34 @@ function App() {
                         </button>
                       </>
                     ) : (
-                      <span className="rolling-stone-panel__missing" aria-label="Missing">
-                        ○
-                      </span>
+                      <>
+                        <span className="rolling-stone-panel__missing" aria-label="Missing">
+                          ○
+                        </span>
+                        <div className="rolling-stone-panel__buy-actions" aria-label="Buy options">
+                          <button
+                            type="button"
+                            className="rolling-stone-panel__buy-link"
+                            onClick={() => openStoreSearch(entry, "amazon")}
+                          >
+                            Amazon
+                          </button>
+                          <button
+                            type="button"
+                            className="rolling-stone-panel__buy-link"
+                            onClick={() => openStoreSearch(entry, "hmv")}
+                          >
+                            HMV
+                          </button>
+                          <button
+                            type="button"
+                            className="rolling-stone-panel__buy-link"
+                            onClick={() => openStoreSearch(entry, "rarewaves")}
+                          >
+                            Rarewaves
+                          </button>
+                        </div>
+                      </>
                     )}
                   </div>
                 </li>
