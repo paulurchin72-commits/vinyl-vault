@@ -345,6 +345,7 @@ async function getReleaseTrackSearchData(releaseId) {
 export async function searchDiscogsTracks({ artist = "", track = "" }) {
   const normalizedArtist = String(artist || "").trim();
   const normalizedTrack = String(track || "").trim();
+  const normalizedArtistSearch = normalizeSearchText(normalizedArtist);
 
   if (!normalizedTrack) {
     return [];
@@ -382,6 +383,13 @@ export async function searchDiscogsTracks({ artist = "", track = "" }) {
         const releaseTrackData = await getReleaseTrackSearchData(candidate.release_id);
         if (!releaseTrackData) {
           return;
+        }
+
+        if (normalizedArtistSearch) {
+          const candidateArtistSearch = normalizeSearchText(releaseTrackData.artist || candidate.Artist || "");
+          if (!candidateArtistSearch.includes(normalizedArtistSearch)) {
+            return;
+          }
         }
 
         const matchedTrack = releaseTrackData.tracks.find((trackTitle) => {
