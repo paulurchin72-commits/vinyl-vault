@@ -196,6 +196,10 @@ function normalizeSavedAlbumDetails(value) {
           memory: typeof entry.memory === "string" ? entry.memory : "",
           favorite: Boolean(entry.favorite),
           rating: Number(entry.rating) || 0,
+          artist: typeof entry.artist === "string" ? entry.artist : "",
+          title: typeof entry.title === "string" ? entry.title : "",
+          released: entry.released || "",
+          release_id: normalizeReleaseId(entry.release_id || entry.releaseId),
         },
       ])
   );
@@ -218,6 +222,36 @@ function normalizeMatchText(value) {
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function parseAlbumKeyFallback(albumKey) {
+  const rawKey = String(albumKey || "").trim();
+  if (!rawKey) {
+    return {
+      artist: "Unknown Artist",
+      title: "Unknown Album",
+      released: "",
+    };
+  }
+
+  const keyParts = rawKey.split("-");
+  if (keyParts.length >= 3) {
+    const released = keyParts[keyParts.length - 1];
+    const title = keyParts[keyParts.length - 2];
+    const artist = keyParts.slice(0, -2).join("-");
+
+    return {
+      artist: artist || "Unknown Artist",
+      title: title || "Unknown Album",
+      released: released || "",
+    };
+  }
+
+  return {
+    artist: "Unknown Artist",
+    title: rawKey || "Unknown Album",
+    released: "",
+  };
 }
 
 function formatCurrencyAmount(amount, currencyCode = "USD") {
@@ -1183,37 +1217,65 @@ function App() {
     return Number(savedDetails.rating) === 5;
   });
 
+  const recordsByAlbumKey = useMemo(() => {
+    const byAlbumKey = new Map();
+
+    records.forEach((record) => {
+      byAlbumKey.set(getAlbumKey(record), record);
+    });
+
+    return byAlbumKey;
+  }, [records]);
+
   const memoriesByArtist = useMemo(() => {
     const groupedMemories = new Map();
 
-    records.forEach((record) => {
-      const albumKey = getAlbumKey(record);
-      const savedDetails = savedAlbumDetails[albumKey] || {};
-      const memoryText = savedDetails.memory?.trim();
-
+    Object.entries(savedAlbumDetails).forEach(([albumKey, savedDetails]) => {
+      const memoryText = savedDetails?.memory?.trim();
       if (!memoryText) {
         return;
       }
 
-      const artist = record.Artist || "Unknown Artist";
+      const matchingRecord = recordsByAlbumKey.get(albumKey) || null;
+      const fallback = parseAlbumKeyFallback(albumKey);
+      const artist =
+        (matchingRecord?.Artist || savedDetails.artist || fallback.artist || "Unknown Artist").trim() ||
+        "Unknown Artist";
+      const title = (matchingRecord?.Title || savedDetails.title || fallback.title || "Unknown Album").trim() ||
+        "Unknown Album";
+      const released = matchingRecord?.Released || savedDetails.released || fallback.released || "";
+      const recordForOpen =
+        matchingRecord || {
+          albumKey,
+          release_id: normalizeReleaseId(savedDetails.release_id),
+          Artist: artist,
+          Title: title,
+          Released: released || "Unknown",
+          cover: null,
+          thumb: null,
+        };
+
       if (!groupedMemories.has(artist)) {
         groupedMemories.set(artist, []);
       }
 
       groupedMemories.get(artist).push({
         albumKey,
-        recordKey: getRecordListKey(record),
-        title: record.Title,
-        released: record.Released,
+        recordKey: matchingRecord ? getRecordListKey(matchingRecord) : `memory-${albumKey}`,
+        title,
+        released,
         memory: memoryText,
-        record,
+        record: recordForOpen,
       });
     });
 
     return Array.from(groupedMemories.entries())
-      .map(([artist, entries]) => ({ artist, entries }))
+      .map(([artist, entries]) => ({
+        artist,
+        entries: [...entries].sort((firstEntry, secondEntry) => firstEntry.title.localeCompare(secondEntry.title)),
+      }))
       .sort((firstGroup, secondGroup) => firstGroup.artist.localeCompare(secondGroup.artist));
-  }, [records, savedAlbumDetails]);
+  }, [savedAlbumDetails, recordsByAlbumKey]);
 
   function openArtistView(artistName) {
     if (!artistName) {
@@ -1327,6 +1389,10 @@ function App() {
           memory: details.memory,
           favorite: details.favorite,
           rating: details.rating,
+          artist: details.Artist || "",
+          title: details.Title || "",
+          released: details.Released || details.year || "",
+          release_id: normalizeReleaseId(details.release_id || details.releaseId),
         },
       };
 
@@ -1364,6 +1430,10 @@ function App() {
           ...currentEntry,
           favorite: details.favorite,
           rating: details.rating,
+          artist: details.Artist || currentEntry.artist || "",
+          title: details.Title || currentEntry.title || "",
+          released: details.Released || details.year || currentEntry.released || "",
+          release_id: normalizeReleaseId(details.release_id || details.releaseId || currentEntry.release_id),
         },
       };
 
