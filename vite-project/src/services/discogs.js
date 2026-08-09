@@ -352,60 +352,17 @@ export async function searchDiscogsTracks({ artist = "", track = "" }) {
   }
 
   if (normalizedArtist && !normalizedTrack) {
-    const params = new URLSearchParams({
-      type: "release",
-      per_page: "30",
-      q: normalizedArtist,
-    });
-
-    const data = await requestDiscogsJson(`https://api.discogs.com/database/search?${params.toString()}`);
-    let artistMatches = (Array.isArray(data?.results) ? data.results : [])
-      .map(buildSearchCandidate)
-      .filter((candidate) => candidate.release_id)
-      .filter((candidate) => {
-        const candidateArtistSearch = normalizeSearchText(candidate.Artist);
-        return candidateArtistSearch.includes(normalizedArtistSearch);
-      })
-      .filter((candidate, index, list) => list.findIndex((entry) => entry.release_id === candidate.release_id) === index)
-      .slice(0, 10)
-      .map((candidate) => ({
-        release_id: candidate.release_id,
-        artist: candidate.Artist || normalizedArtist || "Unknown Artist",
-        album: candidate.Title || "Unknown Album",
-        year: candidate.Released || "Unknown",
-        label: candidate.Label || "",
-        matchedTrack: "",
-        thumb: candidate.thumb || null,
-        cover: candidate.cover || candidate.thumb || null,
-      }));
-
-    // Fallback for artists with punctuation/aliases where `q` search misses direct artist matches.
-    if (!artistMatches.length) {
-      const strictParams = new URLSearchParams({
-        type: "release",
-        per_page: "30",
-        artist: normalizedArtist,
-      });
-      const strictData = await requestDiscogsJson(`https://api.discogs.com/database/search?${strictParams.toString()}`);
-
-      artistMatches = (Array.isArray(strictData?.results) ? strictData.results : [])
-        .map(buildSearchCandidate)
-        .filter((candidate) => candidate.release_id)
-        .filter((candidate, index, list) => list.findIndex((entry) => entry.release_id === candidate.release_id) === index)
-        .slice(0, 10)
-        .map((candidate) => ({
-          release_id: candidate.release_id,
-          artist: candidate.Artist || normalizedArtist || "Unknown Artist",
-          album: candidate.Title || "Unknown Album",
-          year: candidate.Released || "Unknown",
-          label: candidate.Label || "",
-          matchedTrack: "",
-          thumb: candidate.thumb || null,
-          cover: candidate.cover || candidate.thumb || null,
-        }));
-    }
-
-    return artistMatches.slice(0, 6);
+    const releaseMatches = await searchDiscogsReleases({ artist: normalizedArtist, query: "", barcode: "", releaseId: "" });
+    return releaseMatches.slice(0, 6).map((candidate) => ({
+      release_id: candidate.release_id,
+      artist: candidate.Artist || normalizedArtist || "Unknown Artist",
+      album: candidate.Title || "Unknown Album",
+      year: candidate.Released || "Unknown",
+      label: candidate.Label || "",
+      matchedTrack: "",
+      thumb: candidate.thumb || null,
+      cover: candidate.cover || candidate.thumb || null,
+    }));
   }
 
   const params = new URLSearchParams({
