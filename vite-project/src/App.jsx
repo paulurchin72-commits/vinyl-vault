@@ -2560,7 +2560,11 @@ function App() {
                     <p className="rolling-stone-panel__album">{entry.album}</p>
                     <p className="rolling-stone-panel__artist">{entry.artist}</p>
                   </div>
-                  <div className="rolling-stone-panel__state">
+                  <div
+                    className={`rolling-stone-panel__state ${
+                      entry.ownedRecord ? "rolling-stone-panel__state--owned" : "rolling-stone-panel__state--missing"
+                    }`}
+                  >
                     {entry.ownedRecord ? (
                       <>
                         <span className="rolling-stone-panel__owned" aria-label="Owned">
