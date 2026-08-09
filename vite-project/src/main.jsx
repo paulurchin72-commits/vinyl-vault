@@ -16,6 +16,12 @@ if (import.meta.env.PROD) {
         return
       }
 
+      if (navigator.serviceWorker?.controller) {
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          window.location.reload()
+        }, { once: true })
+      }
+
       // Poll for updates so installed PWAs pick up fresh deployments quickly.
       setInterval(() => {
         registration.update()

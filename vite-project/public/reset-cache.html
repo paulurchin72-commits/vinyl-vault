@@ -80,6 +80,35 @@
     </main>
 
     <script>
+      const PERSISTENT_CACHE_PREFIXES = ["release-details:", "artwork-v2:url:"];
+      const ARTWORK_DB_NAME = "music-and-memories-artwork-cache";
+
+      function clearPersistentCacheEntries() {
+        try {
+          const keysToRemove = [];
+
+          for (let index = 0; index < localStorage.length; index += 1) {
+            const key = localStorage.key(index);
+
+            if (key && PERSISTENT_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix))) {
+              keysToRemove.push(key);
+            }
+          }
+
+          keysToRemove.forEach((key) => localStorage.removeItem(key));
+        } catch (error) {
+          // Ignore localStorage cleanup failures and continue with the reset flow.
+        }
+
+        if ("indexedDB" in window) {
+          try {
+            indexedDB.deleteDatabase(ARTWORK_DB_NAME);
+          } catch (error) {
+            // Ignore IndexedDB cleanup failures and continue with the reset flow.
+          }
+        }
+      }
+
       async function resetAppCache() {
         const status = document.getElementById("status");
         const button = document.getElementById("resetButton");
@@ -88,6 +117,8 @@
         status.textContent = "Unregistering service workers...";
 
         try {
+          clearPersistentCacheEntries();
+
           if ("serviceWorker" in navigator) {
             const registrations = await navigator.serviceWorker.getRegistrations();
             await Promise.all(registrations.map((registration) => registration.unregister()));
