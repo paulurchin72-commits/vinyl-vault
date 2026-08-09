@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Music & Memories - Reset App Cache</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #0f1218;
+        --panel: #171b22;
+        --text: #f5f7fa;
+        --muted: #a8b1bf;
+        --accent: #f3c35b;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: radial-gradient(circle at top, #1d2430, var(--bg));
+        color: var(--text);
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        padding: 20px;
+      }
+      .panel {
+        width: min(560px, 100%);
+        background: var(--panel);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 14px;
+        padding: 22px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 1.35rem;
+      }
+      p {
+        margin: 8px 0;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+      .status {
+        margin: 16px 0;
+        color: var(--text);
+        min-height: 1.3em;
+      }
+      button {
+        appearance: none;
+        border: 0;
+        background: var(--accent);
+        color: #1a1a1a;
+        font-weight: 700;
+        border-radius: 10px;
+        padding: 10px 14px;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .small {
+        font-size: 0.9rem;
+      }
+      code {
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 6px;
+        padding: 1px 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="panel">
+      <h1>Reset Music & Memories App Cache</h1>
+      <p>This clears service workers and browser caches for this site, then reloads the app.</p>
+      <p class="small">Your library data in local storage is not removed by this reset.</p>
+      <p id="status" class="status">Ready.</p>
+      <button id="resetButton" type="button">Reset Cache And Reload</button>
+      <p class="small">If this page does not open from the app, paste this URL in Chrome:<br /><code>/reset-cache.html</code></p>
+    </main>
+
+    <script>
+      async function resetAppCache() {
+        const status = document.getElementById("status");
+        const button = document.getElementById("resetButton");
+
+        button.disabled = true;
+        status.textContent = "Unregistering service workers...";
+
+        try {
+          if ("serviceWorker" in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(registrations.map((registration) => registration.unregister()));
+          }
+
+          status.textContent = "Clearing Cache Storage...";
+
+          if ("caches" in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map((key) => caches.delete(key)));
+          }
+
+          status.textContent = "Reloading latest app build...";
+          window.location.replace("/?cache_reset=" + Date.now());
+        } catch (error) {
+          status.textContent = "Reset failed: " + (error && error.message ? error.message : "Unknown error");
+          button.disabled = false;
+        }
+      }
+
+      document.getElementById("resetButton").addEventListener("click", resetAppCache);
+
+      if (new URLSearchParams(window.location.search).get("auto") === "1") {
+        resetAppCache();
+      }
+    </script>
+  </body>
+</html>
