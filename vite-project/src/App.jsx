@@ -70,8 +70,12 @@ const ADDED_RECORDS_KEY = "the-memory-box:added-records";
 const CUSTOM_ARTWORK_KEY = "the-memory-box:custom-artwork";
 const ROLLING_STONE_LIST_KEY = "the-memory-box:rolling-stone-top-500";
 const MANUAL_COLLECTION_WORTH_KEY = "the-memory-box:manual-collection-worth";
+const WORTH_BY_RELEASE_KEY = "the-memory-box:worth-by-release";
 const ROLLING_STONE_GIST_API = "https://api.github.com/gists/232302a4ba29fd8f5f0d0352ef55d2b9";
 const RECENTLY_VIEWED_LIMIT = 10;
+const WORTH_REFRESH_BATCH_SIZE = 24;
+const WORTH_REFRESH_INTERVAL_MS = 3 * 60 * 1000;
+const WORTH_STALE_MS = 24 * 60 * 60 * 1000;
 const LETTER_FILTERS = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ", "0-9", "ALL"];
 const PERSISTENT_CACHE_PREFIXES = ["release-details:", "artwork-v2:url:"];
 const ARTWORK_DB_NAME = "music-and-memories-artwork-cache";
@@ -119,6 +123,62 @@ function normalizeManualCollectionWorth(value) {
     currency,
     source,
   };
+}
+
+function normalizeWorthByRelease(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([releaseId, entry]) => {
+        if (!releaseId || !entry || typeof entry !== "object") {
+          return null;
+        }
+
+        const amount = Number(entry.value);
+        const updatedAt = Number(entry.updatedAt) || 0;
+
+        return [
+          String(releaseId),
+          {
+            value: Number.isFinite(amount) && amount > 0 ? amount : null,
+            currency: String(entry.currency || "USD").toUpperCase(),
+            updatedAt,
+          },
+        ];
+      })
+      .filter(Boolean)
+  );
+}
+
+function formatLastUpdatedLabel(timestamp) {
+  if (!timestamp) {
+    return "just now";
+  }
+
+  const deltaMs = Date.now() - Number(timestamp);
+  if (!Number.isFinite(deltaMs) || deltaMs <= 0) {
+    return "just now";
+  }
+
+  const minutes = Math.floor(deltaMs / 60000);
+  if (minutes < 1) {
+    return "just now";
+  }
+
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
+
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 function normalizeRecentlyViewedEntries(storedValue) {
@@ -581,6 +641,7 @@ function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const refreshCounterRef = useRef(0);
+  const worthRefreshInFlightRef = useRef(false);
   const [baseRecords, setBaseRecords] = useState([]);
   const [addedRecords, setAddedRecords] = useState(() => loadAddedRecords());
   const [search, setSearch] = useState("");
@@ -610,11 +671,20 @@ function App() {
   const [worthRankedAlbums, setWorthRankedAlbums] = useState([]);
   const [worthDetailsOpen, setWorthDetailsOpen] = useState(false);
   const [worthLoading, setWorthLoading] = useState(false);
+  const [worthByRelease, setWorthByRelease] = useState(() =>
+    normalizeWorthByRelease(loadStoredJson(WORTH_BY_RELEASE_KEY, {}))
+  );
+  const [worthLastUpdatedAt, setWorthLastUpdatedAt] = useState(0);
+  const worthByReleaseRef = useRef(worthByRelease);
   const [manualCollectionWorth, setManualCollectionWorth] = useState(() =>
     normalizeManualCollectionWorth(loadStoredJson(MANUAL_COLLECTION_WORTH_KEY, null))
   );
   const records = useMemo(() => [...addedRecords, ...baseRecords], [addedRecords, baseRecords]);
   const recentlyViewedAlbumKeys = recentlyViewed.map((entry) => entry.albumKey);
+
+  useEffect(() => {
+    worthByReleaseRef.current = worthByRelease;
+  }, [worthByRelease]);
 
   useEffect(() => {
     function handlePopState() {
@@ -991,7 +1061,51 @@ function App() {
     }
   }
 
-  async function loadCollectionWorthEstimate() {
+  function buildWorthSummary(releaseIds, releaseIdToRecord, worthStore) {
+    const rankedEntries = releaseIds
+      .map((releaseId) => {
+        const worthEntry = worthStore[releaseId] || null;
+        if (!worthEntry || !Number.isFinite(Number(worthEntry.value)) || Number(worthEntry.value) <= 0) {
+          return null;
+        }
+
+        const matchingRecord = releaseIdToRecord.get(releaseId) || null;
+
+        return {
+          albumKey: matchingRecord ? getAlbumKey(matchingRecord) : null,
+          artist: matchingRecord?.Artist || "Unknown Artist",
+          title: matchingRecord?.Title || "Unknown Album",
+          year: matchingRecord?.Released || "",
+          releaseId,
+          value: Number(worthEntry.value),
+          currency: worthEntry.currency || "USD",
+          record: matchingRecord,
+          updatedAt: Number(worthEntry.updatedAt) || 0,
+        };
+      })
+      .filter(Boolean)
+      .sort((firstEntry, secondEntry) => secondEntry.value - firstEntry.value);
+
+    const newestUpdate = rankedEntries.reduce(
+      (latest, entry) => Math.max(latest, Number(entry.updatedAt) || 0),
+      0
+    );
+
+    return {
+      estimate: {
+        total: rankedEntries.reduce((sum, entry) => sum + entry.value, 0),
+        sampled: rankedEntries.length,
+        sampleSize: releaseIds.length,
+        currency: rankedEntries[0]?.currency || "USD",
+      },
+      ranked: rankedEntries.slice(0, 20),
+      newestUpdate,
+    };
+  }
+
+  async function loadCollectionWorthEstimate(options = {}) {
+    const { refresh = true } = options;
+    const worthStoreSnapshot = worthByReleaseRef.current;
     const releaseIdToContext = new Map();
     const releaseIdToRecord = new Map();
 
@@ -1010,9 +1124,8 @@ function App() {
     });
 
     const releaseIds = Array.from(releaseIdToContext.keys());
-    const trackedReleaseIds = releaseIds.slice(0, 40);
 
-    if (!trackedReleaseIds.length) {
+    if (!releaseIds.length) {
       setCollectionWorthEstimate({
         total: 0,
         sampled: 0,
@@ -1020,17 +1133,52 @@ function App() {
         currency: "USD",
       });
       setWorthRankedAlbums([]);
+      setWorthLastUpdatedAt(0);
       return;
     }
 
+    const initialSummary = buildWorthSummary(releaseIds, releaseIdToRecord, worthStoreSnapshot);
+    setCollectionWorthEstimate(initialSummary.estimate);
+    setWorthRankedAlbums(initialSummary.ranked);
+    setWorthLastUpdatedAt(initialSummary.newestUpdate);
+
+    if (!refresh || worthRefreshInFlightRef.current) {
+      return;
+    }
+
+    const now = Date.now();
+    const refreshReleaseIds = releaseIds
+      .map((releaseId) => ({
+        releaseId,
+        updatedAt: Number(worthStoreSnapshot[releaseId]?.updatedAt) || 0,
+      }))
+      .sort((firstEntry, secondEntry) => {
+        const firstStale = now - firstEntry.updatedAt >= WORTH_STALE_MS ? 0 : 1;
+        const secondStale = now - secondEntry.updatedAt >= WORTH_STALE_MS ? 0 : 1;
+
+        if (firstStale !== secondStale) {
+          return firstStale - secondStale;
+        }
+
+        return firstEntry.updatedAt - secondEntry.updatedAt;
+      })
+      .slice(0, WORTH_REFRESH_BATCH_SIZE)
+      .map((entry) => entry.releaseId);
+
+    if (!refreshReleaseIds.length) {
+      return;
+    }
+
+    worthRefreshInFlightRef.current = true;
     setWorthLoading(true);
 
     try {
-      const rankedEntries = [];
-      let currencyCode = "USD";
+      const nextWorthByRelease = {
+        ...worthStoreSnapshot,
+      };
 
-      for (let index = 0; index < trackedReleaseIds.length; index += 4) {
-        const chunk = trackedReleaseIds.slice(index, index + 4);
+      for (let index = 0; index < refreshReleaseIds.length; index += 4) {
+        const chunk = refreshReleaseIds.slice(index, index + 4);
         const results = await Promise.allSettled(
           chunk.map(async (releaseId) => {
             const fallbackContext = releaseIdToContext.get(releaseId) || null;
@@ -1047,59 +1195,61 @@ function App() {
           const lowestPrice = Number(releaseData?.lowestPrice);
 
           if (!Number.isFinite(lowestPrice) || lowestPrice <= 0) {
+            nextWorthByRelease[releaseId] = {
+              value: null,
+              currency: releaseData?.priceCurrency || "USD",
+              updatedAt: Date.now(),
+            };
             return;
           }
 
-          const releaseId = chunk[resultIndex] || null;
-          const fallbackContext = releaseIdToContext.get(releaseId) || null;
-          const matchingRecord = releaseIdToRecord.get(releaseId) || null;
-
-          rankedEntries.push({
-            albumKey: matchingRecord ? getAlbumKey(matchingRecord) : null,
-            artist: matchingRecord?.Artist || fallbackContext?.artist || "Unknown Artist",
-            title: matchingRecord?.Title || fallbackContext?.title || "Unknown Album",
-            year: matchingRecord?.Released || fallbackContext?.year || "",
-            releaseId,
+          nextWorthByRelease[releaseId] = {
             value: lowestPrice,
             currency: releaseData?.priceCurrency || "USD",
-            record: matchingRecord,
-          });
-
-          if (releaseData?.priceCurrency) {
-            currencyCode = releaseData.priceCurrency;
-          }
+            updatedAt: Date.now(),
+          };
         });
       }
 
-      rankedEntries.sort((firstEntry, secondEntry) => secondEntry.value - firstEntry.value);
+      setWorthByRelease(nextWorthByRelease);
+      worthByReleaseRef.current = nextWorthByRelease;
 
-      setCollectionWorthEstimate({
-        total: rankedEntries.reduce((sum, entry) => sum + entry.value, 0),
-        sampled: rankedEntries.length,
-        sampleSize: trackedReleaseIds.length,
-        currency: currencyCode,
-      });
-      setWorthRankedAlbums(rankedEntries.slice(0, 10));
+      try {
+        localStorage.setItem(WORTH_BY_RELEASE_KEY, JSON.stringify(nextWorthByRelease));
+      } catch {
+        // Ignore storage failures and keep the in-memory worth cache.
+      }
+
+      const refreshedSummary = buildWorthSummary(releaseIds, releaseIdToRecord, nextWorthByRelease);
+      setCollectionWorthEstimate(refreshedSummary.estimate);
+      setWorthRankedAlbums(refreshedSummary.ranked);
+      setWorthLastUpdatedAt(refreshedSummary.newestUpdate);
     } finally {
+      worthRefreshInFlightRef.current = false;
       setWorthLoading(false);
     }
   }
 
   useEffect(() => {
-    let isCanceled = false;
+    let isMounted = true;
 
     async function fetchWorthData() {
-      if (isCanceled) {
+      if (!isMounted) {
         return;
       }
 
-      await loadCollectionWorthEstimate();
+      await loadCollectionWorthEstimate({ refresh: true });
     }
 
     void fetchWorthData();
 
+    const intervalId = window.setInterval(() => {
+      void loadCollectionWorthEstimate({ refresh: true });
+    }, WORTH_REFRESH_INTERVAL_MS);
+
     return () => {
-      isCanceled = true;
+      isMounted = false;
+      window.clearInterval(intervalId);
     };
   }, [records]);
 
@@ -1583,6 +1733,7 @@ function App() {
         customArtworkByAlbumKey,
         rollingStoneList,
         manualCollectionWorth,
+        worthByRelease,
       },
     };
 
@@ -1619,6 +1770,7 @@ function App() {
     const nextCustomArtwork = normalizeCustomArtworkEntries(backupData?.customArtworkByAlbumKey || {});
     const nextRollingStoneList = normalizeRollingStoneEntries(backupData?.rollingStoneList || []);
     const nextManualCollectionWorth = normalizeManualCollectionWorth(backupData?.manualCollectionWorth);
+    const nextWorthByRelease = normalizeWorthByRelease(backupData?.worthByRelease || {});
 
     setAddedRecords(nextAddedRecords);
     setSavedAlbumDetails(nextSavedAlbumDetails);
@@ -1626,6 +1778,7 @@ function App() {
     setCustomArtworkByAlbumKey(nextCustomArtwork);
     setRollingStoneList(nextRollingStoneList);
     setManualCollectionWorth(nextManualCollectionWorth);
+    setWorthByRelease(nextWorthByRelease);
     setRollingStoneStatus(nextRollingStoneList.length ? `Imported ${nextRollingStoneList.length} tracker entries.` : "");
     setSelectedAlbum(null);
 
@@ -1640,6 +1793,7 @@ function App() {
       } else {
         localStorage.removeItem(MANUAL_COLLECTION_WORTH_KEY);
       }
+      localStorage.setItem(WORTH_BY_RELEASE_KEY, JSON.stringify(nextWorthByRelease));
     } catch {
       // Keep imported state in memory even if persistence hits a browser quota limit.
     }
@@ -1965,7 +2119,7 @@ function App() {
     const displayedWorthHint = manualCollectionWorth
       ? "Manual Discogs worth imported"
       : collectionWorthEstimate.sampled
-        ? `From ${collectionWorthEstimate.sampled}/${collectionWorthEstimate.sampleSize} priced releases (GBP)`
+        ? `From ${collectionWorthEstimate.sampled}/${collectionWorthEstimate.sampleSize} priced releases • updated ${formatLastUpdatedLabel(worthLastUpdatedAt)}`
         : "No Discogs price data yet";
 
     const memoryCount = Object.values(savedAlbumDetails).filter((entry) => entry?.memory?.trim()).length;
@@ -2080,6 +2234,17 @@ function App() {
                 </div>
                 <button type="button" className="worth-details-close" onClick={() => setWorthDetailsOpen(false)}>
                   Close
+                </button>
+              </div>
+
+              <div className="worth-details-toolbar">
+                <button
+                  type="button"
+                  className="collection-button"
+                  onClick={() => void loadCollectionWorthEstimate({ refresh: true })}
+                  disabled={worthLoading}
+                >
+                  {worthLoading ? "Refreshing…" : "Refresh prices"}
                 </button>
               </div>
 
