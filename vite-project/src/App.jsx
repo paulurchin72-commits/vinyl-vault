@@ -1631,6 +1631,30 @@ function App() {
     return "Rolling Stone tracker cleared.";
   }
 
+  async function forceRefreshApp() {
+    if (typeof window === "undefined") {
+      return "Refreshing app...";
+    }
+
+    try {
+      if ("serviceWorker" in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map((registration) => registration.unregister()));
+      }
+
+      if ("caches" in window) {
+        const cacheKeys = await caches.keys();
+        await Promise.all(cacheKeys.map((cacheKey) => caches.delete(cacheKey)));
+      }
+    } catch {
+      // Continue reload attempt even if cleanup partially fails.
+    }
+
+    const targetUrl = `${window.location.pathname}${window.location.search || ""}`;
+    window.location.replace(`${targetUrl}${targetUrl.includes("?") ? "&" : "?"}refresh=${Date.now()}`);
+    return "Refreshing app...";
+  }
+
   async function importRollingStoneListOnline() {
     setRollingStoneStatus("Fetching current Top 500 list...");
 
@@ -2415,6 +2439,7 @@ function App() {
                   onImportBackup={importLibraryBackup}
                   onClearRecentlyViewed={clearRecentlyViewedHistory}
                   onClearRollingStoneTracker={clearRollingStoneTracker}
+                  onForceRefreshApp={forceRefreshApp}
                 />
               }
             />

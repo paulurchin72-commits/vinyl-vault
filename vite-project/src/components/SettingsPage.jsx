@@ -6,6 +6,7 @@ function SettingsPage({
   onImportBackup,
   onClearRecentlyViewed,
   onClearRollingStoneTracker,
+  onForceRefreshApp,
 }) {
   const importInputRef = useRef(null);
   const [statusMessage, setStatusMessage] = useState("");
@@ -53,6 +54,15 @@ function SettingsPage({
   function handleClearRollingStoneTracker() {
     const message = onClearRollingStoneTracker?.();
     setStatusMessage(message || "Rolling Stone tracker cleared.");
+  }
+
+  async function handleForceRefreshApp() {
+    try {
+      const message = await onForceRefreshApp?.();
+      setStatusMessage(message || "Refreshing app...");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Unable to force refresh right now.");
+    }
   }
 
   return (
@@ -110,6 +120,20 @@ function SettingsPage({
           </button>
           <button type="button" className="album-modal__button album-modal__button--secondary" onClick={handleClearRollingStoneTracker}>
             Clear Top 500 Tracker
+          </button>
+        </div>
+
+        <p className="settings-page__panel-copy">
+          If this device keeps showing an older build, force a cache reset and reload.
+        </p>
+
+        <div className="settings-page__actions">
+          <button
+            type="button"
+            className="album-modal__button album-modal__button--primary"
+            onClick={handleForceRefreshApp}
+          >
+            Force Refresh App
           </button>
         </div>
       </div>
