@@ -6,7 +6,22 @@ import './index.css'
 import App from './App.jsx'
 
 if (import.meta.env.PROD) {
-  registerSW({ immediate: true })
+  const updateSW = registerSW({
+    immediate: true,
+    onNeedRefresh() {
+      updateSW(true)
+    },
+    onRegisteredSW(swUrl, registration) {
+      if (!registration) {
+        return
+      }
+
+      // Poll for updates so installed PWAs pick up fresh deployments quickly.
+      setInterval(() => {
+        registration.update()
+      }, 60 * 1000)
+    },
+  })
 } else if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then((registrations) => {
     registrations.forEach((registration) => {
