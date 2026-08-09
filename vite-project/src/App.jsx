@@ -2466,6 +2466,7 @@ function App() {
         amazon: `https://www.amazon.co.uk/s?k=${searchQuery}`,
         hmv: `https://hmv.com/search?searchtext=${searchQuery}`,
         rarewaves: `https://www.rarewaves.com/search?q=${searchQuery}`,
+        cheapest: `https://www.google.com/search?tbm=shop&q=${searchQuery}`,
       };
 
       const storeUrl = storeUrls[store];
@@ -2579,6 +2580,13 @@ function App() {
                           ○
                         </span>
                         <div className="rolling-stone-panel__buy-actions" aria-label="Buy options">
+                          <button
+                            type="button"
+                            className="rolling-stone-panel__buy-link"
+                            onClick={() => openStoreSearch(entry, "cheapest")}
+                          >
+                            Find Cheapest
+                          </button>
                           <button
                             type="button"
                             className="rolling-stone-panel__buy-link"
