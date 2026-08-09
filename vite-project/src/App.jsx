@@ -14,6 +14,7 @@ import ContinueListening from "./components/dashboard/ContinueListening";
 import DashboardLayout from "./components/dashboard/DashboardLayout";
 import DuplicateDetectorPage from "./components/DuplicateDetectorPage";
 import HeroSection from "./components/dashboard/HeroSection";
+import HomeTrackSearch from "./components/dashboard/HomeTrackSearch";
 import RandomMemory from "./components/dashboard/RandomMemory";
 import RecentlyAdded from "./components/dashboard/RecentlyAdded";
 import SettingsPage from "./components/SettingsPage";
@@ -1952,6 +1953,7 @@ function App() {
             greeting={greeting}
             name="Music and Memories"
             subtitle="Pick your next spin."
+            extra={<HomeTrackSearch onOpenAlbum={openAlbum} />}
           />
         }
         stats={<CollectionStats items={dashboardStats} />}
