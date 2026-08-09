@@ -463,7 +463,9 @@ function App() {
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
   const [selectedAlbum, setSelectedAlbum] = useState(null);
-  const [savedAlbumDetails, setSavedAlbumDetails] = useState(() => loadSavedMemories());
+  const [savedAlbumDetails, setSavedAlbumDetails] = useState(() =>
+    normalizeSavedAlbumDetails(loadSavedMemories())
+  );
   const [surpriseSelection, setSurpriseSelection] = useState(null);
   const [activeFilter, setActiveFilter] = useState("all");
   const [collectionSort, setCollectionSort] = useState("artist-asc");
@@ -1244,16 +1246,21 @@ function App() {
       const title = (matchingRecord?.Title || savedDetails.title || fallback.title || "Unknown Album").trim() ||
         "Unknown Album";
       const released = matchingRecord?.Released || savedDetails.released || fallback.released || "";
-      const recordForOpen =
-        matchingRecord || {
-          albumKey,
-          release_id: normalizeReleaseId(savedDetails.release_id),
-          Artist: artist,
-          Title: title,
-          Released: released || "Unknown",
-          cover: null,
-          thumb: null,
-        };
+      const recordForOpen = matchingRecord
+        ? {
+            ...matchingRecord,
+            // Preserve the exact saved-memory key so we open and edit the right memory entry.
+            albumKey,
+          }
+        : {
+            albumKey,
+            release_id: normalizeReleaseId(savedDetails.release_id),
+            Artist: artist,
+            Title: title,
+            Released: released || "Unknown",
+            cover: null,
+            thumb: null,
+          };
 
       if (!groupedMemories.has(artist)) {
         groupedMemories.set(artist, []);
@@ -1261,7 +1268,7 @@ function App() {
 
       groupedMemories.get(artist).push({
         albumKey,
-        recordKey: matchingRecord ? getRecordListKey(matchingRecord) : `memory-${albumKey}`,
+        recordKey: `memory-${albumKey}`,
         title,
         released,
         memory: memoryText,
