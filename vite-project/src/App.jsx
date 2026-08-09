@@ -292,15 +292,62 @@ function formatCurrencyAmount(amount, currencyCode = "USD") {
     return "N/A";
   }
 
+  const normalizedCurrency = String(currencyCode || "USD").toUpperCase();
+  const numericAmount = Math.round(amount);
+
+  if (normalizedCurrency === "GBP" || normalizedCurrency === "EUR") {
+    try {
+      return new Intl.NumberFormat("en-GB", {
+        style: "currency",
+        currency: normalizedCurrency === "EUR" ? "EUR" : "GBP",
+        maximumFractionDigits: 0,
+      }).format(numericAmount);
+    } catch {
+      return `${normalizedCurrency === "EUR" ? "€" : "£"}${numericAmount.toLocaleString("en-GB")}`;
+    }
+  }
+
   try {
     return new Intl.NumberFormat(undefined, {
       style: "currency",
-      currency: currencyCode || "USD",
+      currency: normalizedCurrency || "USD",
       maximumFractionDigits: 0,
-    }).format(amount);
+    }).format(numericAmount);
   } catch {
-    return `${currencyCode || "USD"} ${Math.round(amount).toLocaleString()}`;
+    return `${normalizedCurrency || "USD"} ${numericAmount.toLocaleString()}`;
   }
+}
+
+function convertToGbp(amount, currencyCode = "USD") {
+  if (!Number.isFinite(amount)) {
+    return null;
+  }
+
+  const normalizedCurrency = String(currencyCode || "USD").toUpperCase();
+
+  if (normalizedCurrency === "GBP") {
+    return amount;
+  }
+
+  if (normalizedCurrency === "USD") {
+    return amount * 0.78;
+  }
+
+  if (normalizedCurrency === "EUR") {
+    return amount * 0.86;
+  }
+
+  return amount;
+}
+
+function formatWorthInGbp(amount, currencyCode = "USD") {
+  const amountInGbp = convertToGbp(amount, currencyCode);
+
+  if (!Number.isFinite(amountInGbp)) {
+    return "N/A";
+  }
+
+  return formatCurrencyAmount(amountInGbp, "GBP");
 }
 
 function normalizeRollingStoneRows(rows) {
@@ -539,6 +586,9 @@ function App() {
     sampleSize: 0,
     currency: "USD",
   });
+  const [worthRankedAlbums, setWorthRankedAlbums] = useState([]);
+  const [worthDetailsOpen, setWorthDetailsOpen] = useState(false);
+  const [worthLoading, setWorthLoading] = useState(false);
   const records = useMemo(() => [...addedRecords, ...baseRecords], [addedRecords, baseRecords]);
   const recentlyViewedAlbumKeys = recentlyViewed.map((entry) => entry.albumKey);
 
@@ -917,45 +967,46 @@ function App() {
     }
   }
 
-  useEffect(() => {
-    let isCanceled = false;
+  async function loadCollectionWorthEstimate() {
+    const releaseIdToContext = new Map();
+    const releaseIdToRecord = new Map();
 
-    async function loadCollectionWorthEstimate() {
-      const releaseIdToContext = new Map();
-
-      records.forEach((record) => {
-        const releaseId = normalizeReleaseId(record.release_id || record.releaseId);
-        if (!releaseId || releaseIdToContext.has(releaseId)) {
-          return;
-        }
-
-        releaseIdToContext.set(releaseId, {
-          artist: record.Artist,
-          title: record.Title,
-          year: record.Released,
-        });
-      });
-
-      const releaseIds = Array.from(releaseIdToContext.keys());
-      const sampleReleaseIds = releaseIds.slice(0, 10);
-
-      if (!sampleReleaseIds.length) {
-        if (!isCanceled) {
-          setCollectionWorthEstimate({
-            total: 0,
-            sampled: 0,
-            sampleSize: 0,
-            currency: "USD",
-          });
-        }
+    records.forEach((record) => {
+      const releaseId = normalizeReleaseId(record.release_id || record.releaseId);
+      if (!releaseId || releaseIdToContext.has(releaseId)) {
         return;
       }
 
-      const pricedValues = [];
+      releaseIdToContext.set(releaseId, {
+        artist: record.Artist,
+        title: record.Title,
+        year: record.Released,
+      });
+      releaseIdToRecord.set(releaseId, record);
+    });
+
+    const releaseIds = Array.from(releaseIdToContext.keys());
+    const trackedReleaseIds = releaseIds.slice(0, 40);
+
+    if (!trackedReleaseIds.length) {
+      setCollectionWorthEstimate({
+        total: 0,
+        sampled: 0,
+        sampleSize: 0,
+        currency: "USD",
+      });
+      setWorthRankedAlbums([]);
+      return;
+    }
+
+    setWorthLoading(true);
+
+    try {
+      const rankedEntries = [];
       let currencyCode = "USD";
 
-      for (let index = 0; index < sampleReleaseIds.length; index += 4) {
-        const chunk = sampleReleaseIds.slice(index, index + 4);
+      for (let index = 0; index < trackedReleaseIds.length; index += 4) {
+        const chunk = trackedReleaseIds.slice(index, index + 4);
         const results = await Promise.allSettled(
           chunk.map(async (releaseId) => {
             const fallbackContext = releaseIdToContext.get(releaseId) || null;
@@ -963,7 +1014,7 @@ function App() {
           })
         );
 
-        results.forEach((result) => {
+        results.forEach((result, resultIndex) => {
           if (result.status !== "fulfilled") {
             return;
           }
@@ -975,26 +1026,53 @@ function App() {
             return;
           }
 
-          pricedValues.push(lowestPrice);
+          const releaseId = chunk[resultIndex] || null;
+          const fallbackContext = releaseIdToContext.get(releaseId) || null;
+          const matchingRecord = releaseIdToRecord.get(releaseId) || null;
+
+          rankedEntries.push({
+            albumKey: matchingRecord ? getAlbumKey(matchingRecord) : null,
+            artist: matchingRecord?.Artist || fallbackContext?.artist || "Unknown Artist",
+            title: matchingRecord?.Title || fallbackContext?.title || "Unknown Album",
+            year: matchingRecord?.Released || fallbackContext?.year || "",
+            releaseId,
+            value: lowestPrice,
+            currency: releaseData?.priceCurrency || "USD",
+            record: matchingRecord,
+          });
+
           if (releaseData?.priceCurrency) {
             currencyCode = releaseData.priceCurrency;
           }
         });
       }
 
+      rankedEntries.sort((firstEntry, secondEntry) => secondEntry.value - firstEntry.value);
+
+      setCollectionWorthEstimate({
+        total: rankedEntries.reduce((sum, entry) => sum + entry.value, 0),
+        sampled: rankedEntries.length,
+        sampleSize: trackedReleaseIds.length,
+        currency: currencyCode,
+      });
+      setWorthRankedAlbums(rankedEntries.slice(0, 10));
+    } finally {
+      setWorthLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    let isCanceled = false;
+
+    async function fetchWorthData() {
       if (isCanceled) {
         return;
       }
 
-      setCollectionWorthEstimate({
-        total: pricedValues.reduce((sum, value) => sum + value, 0),
-        sampled: pricedValues.length,
-        sampleSize: sampleReleaseIds.length,
-        currency: currencyCode,
-      });
+      await loadCollectionWorthEstimate();
     }
 
-    void loadCollectionWorthEstimate();
+    void fetchWorthData();
 
     return () => {
       isCanceled = true;
@@ -1224,6 +1302,9 @@ function App() {
             thumb: null,
           };
 
+      const artworkEntry = getArtworkEntry(recordForOpen);
+      const artworkUrl = artworkEntry?.coverUrl || recordForOpen?.cover || recordForOpen?.thumb || null;
+
       if (!groupedMemories.has(artist)) {
         groupedMemories.set(artist, []);
       }
@@ -1235,6 +1316,7 @@ function App() {
         released,
         memory: memoryText,
         record: recordForOpen,
+        artworkUrl,
       });
     });
 
@@ -1803,6 +1885,13 @@ function App() {
       };
     });
 
+    function openWorthDetails() {
+      setWorthDetailsOpen(true);
+      if (!worthLoading && !worthRankedAlbums.length && !collectionWorthEstimate.sampled) {
+        void loadCollectionWorthEstimate();
+      }
+    }
+
     const memoryCount = Object.values(savedAlbumDetails).filter((entry) => entry?.memory?.trim()).length;
     const dashboardStats = [
       { label: "Albums", value: records.length || 0, hint: "Curated sleeves" },
@@ -1827,11 +1916,12 @@ function App() {
       {
         label: "Discogs Worth",
         value: collectionWorthEstimate.sampled
-          ? formatCurrencyAmount(collectionWorthEstimate.total, collectionWorthEstimate.currency)
+          ? formatWorthInGbp(collectionWorthEstimate.total, collectionWorthEstimate.currency)
           : "N/A",
         hint: collectionWorthEstimate.sampled
-          ? `From ${collectionWorthEstimate.sampled}/${collectionWorthEstimate.sampleSize} priced releases`
+          ? `From ${collectionWorthEstimate.sampled}/${collectionWorthEstimate.sampleSize} priced releases (GBP)`
           : "No Discogs price data yet",
+        onClick: openWorthDetails,
       },
     ];
     const memoryEntries = memoriesByArtist.flatMap((group) => group.entries);
@@ -1868,8 +1958,9 @@ function App() {
     }
 
     return (
-      <DashboardLayout
-        hero={
+      <>
+        <DashboardLayout
+          hero={
           <HeroSection
             greeting={greeting}
             name="Music and Memories"
@@ -1903,7 +1994,51 @@ function App() {
           />
         }
         bottomPlayer={<BottomPlayer album={tonightAlbum} onOpenYouTubeMusic={handleOpenYouTubeMusic} />}
-      />
+        />
+
+        {worthDetailsOpen ? (
+          <div className="worth-details-overlay" role="dialog" aria-modal="true" aria-label="Most valuable albums">
+            <div className="worth-details-panel glass-panel">
+              <div className="worth-details-header">
+                <div>
+                  <p className="section-heading__eyebrow">Discogs valuation</p>
+                  <h3 className="section-heading__title">Most valuable albums</h3>
+                </div>
+                <button type="button" className="worth-details-close" onClick={() => setWorthDetailsOpen(false)}>
+                  Close
+                </button>
+              </div>
+
+              <p className="worth-details-summary">
+                {collectionWorthEstimate.sampled
+                  ? `Estimated total: ${formatWorthInGbp(collectionWorthEstimate.total, collectionWorthEstimate.currency)}`
+                  : "No priced albums found yet."}
+              </p>
+
+              {worthLoading ? (
+                <p className="worth-details-empty">Loading Discogs values…</p>
+              ) : worthRankedAlbums.length ? (
+                <ul className="worth-details-list">
+                  {worthRankedAlbums.map((entry, index) => (
+                    <li key={entry.releaseId || `${entry.artist}-${entry.title}`} className="worth-details-item">
+                      <div className="worth-details-item__copy">
+                        <p className="worth-details-item__rank">#{index + 1}</p>
+                        <button type="button" className="worth-details-item__button" onClick={() => entry.record && openAlbum(entry.record)}>
+                          <span className="worth-details-item__title">{entry.title}</span>
+                          <span className="worth-details-item__artist">{entry.artist}</span>
+                        </button>
+                      </div>
+                      <span className="worth-details-item__value">{formatWorthInGbp(entry.value, entry.currency)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="worth-details-empty">Discogs price data is not available for your collection yet.</p>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </>
     );
   }
 
@@ -2142,14 +2277,25 @@ function App() {
                 <ul className="memories-group__list">
                   {group.entries.map((entry) => (
                     <li key={entry.recordKey} className="memories-group__item">
-                      <button
-                        type="button"
-                        className="memories-group__album"
-                        onClick={() => openAlbum(entry.record)}
-                      >
-                        {entry.title} {entry.released ? `(${entry.released})` : ""}
-                      </button>
-                      <p className="memories-group__text">{entry.memory}</p>
+                      <div className="memories-group__content">
+                        {entry.artworkUrl ? (
+                          <img
+                            src={entry.artworkUrl}
+                            alt={`${entry.title} artwork`}
+                            className="memories-group__artwork"
+                          />
+                        ) : null}
+                        <div className="memories-group__copy">
+                          <button
+                            type="button"
+                            className="memories-group__album"
+                            onClick={() => openAlbum(entry.record)}
+                          >
+                            {entry.title} {entry.released ? `(${entry.released})` : ""}
+                          </button>
+                          <p className="memories-group__text">{entry.memory}</p>
+                        </div>
+                      </div>
                     </li>
                   ))}
                 </ul>

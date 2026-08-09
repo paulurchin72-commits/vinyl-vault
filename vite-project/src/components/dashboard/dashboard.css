@@ -426,6 +426,114 @@
   overflow-x: hidden;
 }
 
+.worth-details-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.worth-details-panel {
+  width: min(560px, 100%);
+  max-height: min(80vh, 760px);
+  overflow: auto;
+  border-radius: 24px;
+  padding: 18px;
+  background: linear-gradient(180deg, rgba(20, 20, 20, 0.96), rgba(8, 8, 10, 0.98));
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+}
+
+.worth-details-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.worth-details-close {
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff6e6;
+  cursor: pointer;
+}
+
+.worth-details-summary {
+  margin: 0 0 12px;
+  color: rgba(255, 243, 226, 0.86);
+}
+
+.worth-details-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.worth-details-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.worth-details-item__copy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.worth-details-item__rank {
+  margin: 0;
+  color: #f5c542;
+  font-weight: 700;
+  min-width: 32px;
+}
+
+.worth-details-item__button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  color: #fff5e6;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.worth-details-item__title {
+  font-weight: 700;
+}
+
+.worth-details-item__artist {
+  color: rgba(244, 232, 214, 0.72);
+  font-size: 13px;
+}
+
+.worth-details-item__value {
+  white-space: nowrap;
+  color: #f5c542;
+  font-weight: 700;
+}
+
+.worth-details-empty {
+  margin: 8px 0 0;
+  color: rgba(255, 243, 226, 0.78);
+}
+
 .dashboard-panel__heading {
   display: flex;
   align-items: center;
