@@ -1,6 +1,6 @@
 import { useArtwork } from "../../artwork-v2/useArtwork";
 
-function TonightsPick({ album, isFavorite, onOpenAlbum, onOpenYouTubeMusic, onToggleFavorite }) {
+function TonightsPick({ album, isFavorite, onOpenAlbum, onOpenYouTubeMusic, onToggleFavorite, onPickAnother }) {
   const albumData = album
     ? {
         ...album,
@@ -21,6 +21,11 @@ function TonightsPick({ album, isFavorite, onOpenAlbum, onOpenYouTubeMusic, onTo
           <p className="dashboard-panel__eyebrow">Tonight's Pick</p>
           <h3 className="dashboard-panel__title">A random pull for tonight</h3>
         </div>
+        {album ? (
+          <button type="button" className="surprise-button" onClick={onPickAnother}>
+            Pick another
+          </button>
+        ) : null}
       </div>
 
       {album ? (

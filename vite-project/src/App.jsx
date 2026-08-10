@@ -689,6 +689,7 @@ function App() {
   const [manualCollectionWorth, setManualCollectionWorth] = useState(() =>
     normalizeManualCollectionWorth(loadStoredJson(MANUAL_COLLECTION_WORTH_KEY, null))
   );
+  const [tonightPickShuffleSeed, setTonightPickShuffleSeed] = useState(0);
   const records = useMemo(() => [...addedRecords, ...baseRecords], [addedRecords, baseRecords]);
   const recentlyViewedAlbumKeys = recentlyViewed.map((entry) => entry.albumKey);
 
@@ -2218,7 +2219,10 @@ function App() {
       return `${year}-${month}-${day}`;
     })();
 
-    const tonightRecord = pickStableRecord(records, `${records.map(getAlbumKey).join("|")}|home|${todaySeed}`);
+    const tonightRecord = pickStableRecord(
+      records,
+      `${records.map(getAlbumKey).join("|")}|home|${todaySeed}|${tonightPickShuffleSeed}`
+    );
 
     const tonightAlbum = tonightRecord
       ? {
@@ -2344,6 +2348,10 @@ function App() {
       });
     }
 
+    function handlePickAnotherTonightAlbum() {
+      setTonightPickShuffleSeed((currentSeed) => currentSeed + 1);
+    }
+
     return (
       <>
         <DashboardLayout
@@ -2371,6 +2379,7 @@ function App() {
             onOpenAlbum={openAlbum}
             onOpenYouTubeMusic={handleOpenYouTubeMusic}
             onToggleFavorite={handleToggleTonightFavorite}
+            onPickAnother={handlePickAnotherTonightAlbum}
           />
         }
         randomMemory={
