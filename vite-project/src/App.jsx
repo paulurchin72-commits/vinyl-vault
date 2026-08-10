@@ -2459,6 +2459,55 @@ function App() {
   }
 
   function TopRatedPage() {
+    function normalizeLooseMatchText(value) {
+      return normalizeMatchText(value)
+        .replace(/\([^)]*\)|\[[^\]]*\]/g, " ")
+        .replace(/\b(remaster(?:ed)?|deluxe|expanded|anniversary|mono|stereo|edition|version)\b/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function buildArtistAlbumMatchKeys(artist, album) {
+      const artistStrict = normalizeMatchText(artist);
+      const albumStrict = normalizeMatchText(album);
+      const artistLoose = normalizeLooseMatchText(artist).replace(/^the\s+/, "");
+      const albumLoose = normalizeLooseMatchText(album)
+        .replace(/^the\s+/, "")
+        .replace(/\s+-\s+.*$/, "");
+
+      const keys = new Set([
+        `${artistStrict}|||${albumStrict}`,
+        `${artistLoose}|||${albumLoose}`,
+        `${artistStrict.replace(/^the\s+/, "")}|||${albumStrict.replace(/^the\s+/, "")}`,
+      ]);
+
+      return Array.from(keys).filter((key) => key !== "|||");
+    }
+
+    function buildMissingEntryRecord(entry) {
+      return {
+        albumKey: `rs500-${normalizeMatchText(entry.artist)}-${normalizeMatchText(entry.album)}`,
+        release_id: null,
+        Artist: entry.artist || "Unknown Artist",
+        Title: entry.album || "Unknown Album",
+        Released: "Unknown",
+        Label: "",
+        Format: "Vinyl",
+        cover: null,
+        thumb: null,
+      };
+    }
+
+    function openMissingAlbumDetails(entry) {
+      void openAlbum(buildMissingEntryRecord(entry));
+    }
+
+    function openMissingAlbumYouTubeMusic(entry) {
+      const search = `${entry.artist || ""} ${entry.album || ""}`.trim();
+      const encodedSearch = encodeURIComponent(search);
+      window.open(`https://music.youtube.com/search?q=${encodedSearch}`, "_blank", "noopener,noreferrer");
+    }
+
     function openStoreSearch(entry, store) {
       const searchQuery = encodeURIComponent(`${entry.artist} ${entry.album} vinyl`);
 
@@ -2481,14 +2530,12 @@ function App() {
       const lookup = new Map();
 
       records.forEach((record) => {
-        const artist = normalizeMatchText(record.Artist);
-        const album = normalizeMatchText(record.Title);
-
-        if (!artist || !album) {
-          return;
-        }
-
-        lookup.set(`${artist}|||${album}`, record);
+        const keys = buildArtistAlbumMatchKeys(record.Artist, record.Title);
+        keys.forEach((key) => {
+          if (!lookup.has(key)) {
+            lookup.set(key, record);
+          }
+        });
       });
 
       return lookup;
@@ -2497,8 +2544,10 @@ function App() {
     const rollingStoneRows = (() => {
       return rollingStoneList
         .map((entry, index) => {
-          const key = `${normalizeMatchText(entry.artist)}|||${normalizeMatchText(entry.album)}`;
-          const ownedRecord = collectionByArtistAlbum.get(key) || null;
+          const entryKeys = buildArtistAlbumMatchKeys(entry.artist, entry.album);
+          const ownedRecord = entryKeys
+            .map((key) => collectionByArtistAlbum.get(key))
+            .find(Boolean) || null;
           const rankValue = Number.parseInt(entry.rank, 10);
           const rank = Number.isFinite(rankValue) ? rankValue : index + 1;
 
@@ -2584,6 +2633,20 @@ function App() {
                           ○
                         </span>
                         <div className="rolling-stone-panel__buy-actions" aria-label="Buy options">
+                          <button
+                            type="button"
+                            className="rolling-stone-panel__buy-link"
+                            onClick={() => openMissingAlbumDetails(entry)}
+                          >
+                            View
+                          </button>
+                          <button
+                            type="button"
+                            className="rolling-stone-panel__buy-link"
+                            onClick={() => openMissingAlbumYouTubeMusic(entry)}
+                          >
+                            YouTube Music
+                          </button>
                           <button
                             type="button"
                             className="rolling-stone-panel__buy-link"
