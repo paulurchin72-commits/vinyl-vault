@@ -1539,6 +1539,108 @@ function App() {
       .sort((firstGroup, secondGroup) => firstGroup.artist.localeCompare(secondGroup.artist));
   })();
 
+  useEffect(() => {
+    if (location.pathname !== "/memories") {
+      return;
+    }
+
+    let isCanceled = false;
+    const queuedRecords = [];
+    const queuedAlbumKeys = new Set();
+
+    Object.entries(savedAlbumDetails).forEach(([albumKey, savedDetails]) => {
+      if (!savedDetails?.memory?.trim()) {
+        return;
+      }
+
+      const matchingRecord = recordsByAlbumKey.get(albumKey);
+      const fallback = parseAlbumKeyFallback(albumKey);
+
+      const candidateRecord = matchingRecord
+        ? {
+            ...matchingRecord,
+            albumKey,
+          }
+        : {
+            albumKey,
+            release_id: normalizeReleaseId(savedDetails.release_id),
+            Artist: savedDetails.artist || fallback.artist || "Unknown Artist",
+            Title: savedDetails.title || fallback.title || "Unknown Album",
+            Released: savedDetails.released || fallback.released || "Unknown",
+            cover: null,
+            thumb: null,
+          };
+
+      const candidateAlbumKey = getAlbumKey(candidateRecord);
+      if (queuedAlbumKeys.has(candidateAlbumKey)) {
+        return;
+      }
+      queuedAlbumKeys.add(candidateAlbumKey);
+
+      if (customArtworkByAlbumKey[candidateAlbumKey]) {
+        return;
+      }
+
+      const releaseId = normalizeReleaseId(candidateRecord.release_id || candidateRecord.releaseId);
+      if (!releaseId) {
+        return;
+      }
+
+      const artworkEntry = artworkEntries[candidateAlbumKey] || {
+        status: "idle",
+        coverUrl: null,
+        error: null,
+      };
+
+      if (artworkEntry.coverUrl || artworkEntry.status === "loading" || artworkEntry.status === "missing") {
+        return;
+      }
+
+      queuedRecords.push(candidateRecord);
+    });
+
+    if (!queuedRecords.length) {
+      return;
+    }
+
+    async function hydrateMemoriesArtwork() {
+      for (let index = 0; index < queuedRecords.length; index += 3) {
+        if (isCanceled) {
+          return;
+        }
+
+        const chunk = queuedRecords.slice(index, index + 3);
+        await Promise.allSettled(
+          chunk.map((record) =>
+            artworkManager.ensureAlbumArtwork(
+              {
+                ...record,
+                albumKey: getAlbumKey(record),
+              },
+              getRelease
+            )
+          )
+        );
+
+        if (!isCanceled) {
+          refreshArtworkEntries();
+        }
+      }
+    }
+
+    void hydrateMemoriesArtwork();
+
+    return () => {
+      isCanceled = true;
+    };
+  }, [
+    location.pathname,
+    savedAlbumDetails,
+    recordsByAlbumKey,
+    customArtworkByAlbumKey,
+    artworkEntries,
+  ]);
+
   function openArtistView(artistName) {
     if (!artistName) {
       return;
