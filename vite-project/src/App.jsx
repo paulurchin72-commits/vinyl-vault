@@ -653,7 +653,6 @@ function App() {
   const location = useLocation();
   const refreshCounterRef = useRef(0);
   const worthRefreshInFlightRef = useRef(false);
-  const rollingStoneArtworkAttemptedKeysRef = useRef(new Set());
   const [baseRecords, setBaseRecords] = useState([]);
   const [addedRecords, setAddedRecords] = useState(() => loadAddedRecords());
   const [search, setSearch] = useState("");
@@ -746,97 +745,6 @@ function App() {
     // Clear the active modal whenever the URL path changes.
     setSelectedAlbum(null);
   }, [location.pathname]);
-
-  useEffect(() => {
-    if (!rollingStoneList.length) {
-      rollingStoneArtworkAttemptedKeysRef.current.clear();
-    }
-  }, [rollingStoneList.length]);
-
-  useEffect(() => {
-    if (location.pathname !== "/top-rated" || !rollingStoneList.length) {
-      return;
-    }
-
-    const candidates = rollingStoneList
-      .filter((entry) => !entry.thumb && !entry.cover)
-      .filter((entry) => !rollingStoneArtworkAttemptedKeysRef.current.has(getRollingStoneEntryKey(entry)))
-      .slice(0, 8);
-
-    if (!candidates.length) {
-      return;
-    }
-
-    candidates.forEach((entry) => {
-      rollingStoneArtworkAttemptedKeysRef.current.add(getRollingStoneEntryKey(entry));
-    });
-
-    let isCancelled = false;
-
-    async function hydrateRollingStoneArtwork() {
-      const artworkByEntryKey = new Map();
-
-      for (const entry of candidates) {
-        try {
-          const matches = await searchDiscogsReleases({
-            artist: entry.artist,
-            query: entry.album,
-            barcode: "",
-            releaseId: "",
-          });
-
-          const bestMatch = Array.isArray(matches) ? matches[0] : null;
-          const artworkUrl = bestMatch?.thumb || bestMatch?.cover || null;
-
-          if (!artworkUrl) {
-            continue;
-          }
-
-          artworkByEntryKey.set(getRollingStoneEntryKey(entry), {
-            release_id: normalizeReleaseId(bestMatch?.release_id),
-            thumb: artworkUrl,
-            cover: bestMatch?.cover || artworkUrl,
-          });
-        } catch {
-          // Keep list usable even if some remote lookups fail.
-        }
-      }
-
-      if (isCancelled || !artworkByEntryKey.size) {
-        return;
-      }
-
-      setRollingStoneList((currentList) => {
-        const nextList = currentList.map((entry) => {
-          const patch = artworkByEntryKey.get(getRollingStoneEntryKey(entry));
-          if (!patch) {
-            return entry;
-          }
-
-          return {
-            ...entry,
-            release_id: patch.release_id || entry.release_id || null,
-            thumb: patch.thumb,
-            cover: patch.cover,
-          };
-        });
-
-        try {
-          localStorage.setItem(ROLLING_STONE_LIST_KEY, JSON.stringify(nextList));
-        } catch {
-          // Ignore persistence failures and keep artwork updates in memory.
-        }
-
-        return nextList;
-      });
-    }
-
-    void hydrateRollingStoneArtwork();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [location.pathname, rollingStoneList]);
 
   useEffect(() => {
     Papa.parse("/Pault99-collection-20260803-1505.csv", {

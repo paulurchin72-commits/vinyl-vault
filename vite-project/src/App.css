@@ -1895,7 +1895,7 @@
     grid-template-columns: auto auto minmax(0, 1fr);
     grid-template-areas:
       "art rank copy"
-      "state state";
+      "state state state";
     align-items: start;
   }
 
