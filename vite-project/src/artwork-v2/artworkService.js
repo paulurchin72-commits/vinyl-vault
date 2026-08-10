@@ -65,6 +65,25 @@ function setCachedArtworkUrl(normalizedReleaseId, artworkUrl) {
   }
 }
 
+export function peekArtworkUrl(releaseId) {
+  const normalizedReleaseId = normalizeReleaseId(releaseId);
+  if (!normalizedReleaseId) {
+    return null;
+  }
+
+  if (artworkUrlByReleaseId.has(normalizedReleaseId)) {
+    return artworkUrlByReleaseId.get(normalizedReleaseId);
+  }
+
+  const localCachedUrl = getCachedArtworkUrl(normalizedReleaseId);
+  if (localCachedUrl) {
+    artworkUrlByReleaseId.set(normalizedReleaseId, localCachedUrl);
+    return localCachedUrl;
+  }
+
+  return null;
+}
+
 export async function getArtworkUrl(releaseId, fallbackContext = null) {
   const normalizedReleaseId = normalizeReleaseId(releaseId);
 

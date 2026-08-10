@@ -20,7 +20,7 @@ function FeaturedAlbumHero({ album, onOpenAlbum }) {
         }}
         disabled={!album?.record}
       >
-        {loading ? (
+        {loading && !artworkUrl ? (
           <div className="artwork-state artwork-state--loading" aria-label="Loading artwork">
             <span className="artwork-spinner" />
             <span className="artwork-state__label">Loading artwork</span>

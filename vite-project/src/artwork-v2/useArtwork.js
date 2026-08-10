@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { getArtworkUrl } from "./artworkService";
+import { getArtworkUrl, peekArtworkUrl } from "./artworkService";
 
 export function useArtwork(releaseId, fallbackContext = null) {
-  const [artworkUrl, setArtworkUrl] = useState(null);
+  const [artworkUrl, setArtworkUrl] = useState(() => peekArtworkUrl(releaseId));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -16,6 +16,16 @@ export function useArtwork(releaseId, fallbackContext = null) {
         setArtworkUrl(null);
         setLoading(false);
         setError(null);
+        return;
+      }
+
+      const cachedArtworkUrl = peekArtworkUrl(releaseId);
+      if (cachedArtworkUrl) {
+        if (!isCancelled) {
+          setArtworkUrl(cachedArtworkUrl);
+          setLoading(false);
+          setError(null);
+        }
         return;
       }
 

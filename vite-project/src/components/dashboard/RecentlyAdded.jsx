@@ -11,7 +11,7 @@ function RecentlyAddedCard({ album, onSelect }) {
   return (
     <article className="dashboard-carousel-card">
       <button type="button" className="dashboard-carousel-card__art" onClick={() => onSelect(album)}>
-        {loading ? (
+        {loading && !artworkUrl ? (
           <div className="artwork-state artwork-state--loading" aria-label="Loading artwork">
             <span className="artwork-spinner" />
             <span className="artwork-state__label">Loading artwork</span>

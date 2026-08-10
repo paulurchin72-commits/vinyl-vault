@@ -31,7 +31,7 @@ function TonightsPick({ album, isFavorite, onOpenAlbum, onOpenYouTubeMusic, onTo
       {album ? (
         <>
           <button type="button" className="dashboard-pick__art" onClick={() => onOpenAlbum(album.record)}>
-            {loading ? (
+            {loading && !artworkUrl ? (
               <div className="artwork-state artwork-state--loading" aria-label="Loading artwork">
                 <span className="artwork-spinner" />
                 <span className="artwork-state__label">Loading artwork</span>
