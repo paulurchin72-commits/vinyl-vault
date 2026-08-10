@@ -74,7 +74,7 @@ const WORTH_BY_RELEASE_KEY = "the-memory-box:worth-by-release";
 const WORTH_AUTO_FULL_REPRICE_KEY = "the-memory-box:worth-auto-full-reprice";
 const ROLLING_STONE_GIST_API = "https://api.github.com/gists/232302a4ba29fd8f5f0d0352ef55d2b9";
 const RECENTLY_VIEWED_LIMIT = 10;
-const WORTH_REFRESH_BATCH_SIZE = 24;
+const WORTH_REFRESH_BATCH_SIZE = 12;
 const WORTH_REFRESH_INTERVAL_MS = 3 * 60 * 1000;
 const WORTH_STALE_MS = 24 * 60 * 60 * 1000;
 const LETTER_FILTERS = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ", "0-9", "ALL"];
@@ -1270,26 +1270,33 @@ function App() {
 
   useEffect(() => {
     let isMounted = true;
+    const shouldRunWorthNetworkRefresh = location.pathname === "/home" || worthDetailsOpen;
 
     async function fetchWorthData() {
       if (!isMounted) {
         return;
       }
 
-      await loadCollectionWorthEstimate({ refresh: true, forceAll: worthAutoFullReprice });
+      await loadCollectionWorthEstimate({
+        refresh: shouldRunWorthNetworkRefresh,
+        forceAll: shouldRunWorthNetworkRefresh && worthAutoFullReprice,
+      });
     }
 
     void fetchWorthData();
 
     const intervalId = window.setInterval(() => {
-      void loadCollectionWorthEstimate({ refresh: true, forceAll: worthAutoFullReprice });
+      void loadCollectionWorthEstimate({
+        refresh: shouldRunWorthNetworkRefresh,
+        forceAll: shouldRunWorthNetworkRefresh && worthAutoFullReprice,
+      });
     }, WORTH_REFRESH_INTERVAL_MS);
 
     return () => {
       isMounted = false;
       window.clearInterval(intervalId);
     };
-  }, [records, worthAutoFullReprice]);
+  }, [records, worthAutoFullReprice, location.pathname, worthDetailsOpen]);
 
   const filteredRecords = searchMatchedRecords.filter((record) =>
     recordMatchesFilter(record, activeFilter)
