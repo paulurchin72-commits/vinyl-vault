@@ -2383,6 +2383,22 @@
   }
 
   .album-modal__art {
+    grid-area: art;
+  }
+
+  .album-modal__artwork-hint {
+    grid-area: hint;
+  }
+
+  .album-modal__artwork-toggle {
+    grid-area: toggle;
+  }
+
+  .album-modal__content {
+    grid-area: content;
+  }
+
+  .album-modal__art {
     position: relative;
     width: 100%;
     aspect-ratio: 1 / 1;
@@ -2781,6 +2797,10 @@
 
     .album-modal__layout {
       grid-template-columns: minmax(260px, 420px) minmax(0, 1fr);
+      grid-template-areas:
+        "art content"
+        "hint content"
+        "toggle content";
       gap: 28px;
       align-items: flex-start;
     }

@@ -2715,19 +2715,72 @@ function App() {
     function buildMissingEntryRecord(entry) {
       return {
         albumKey: `rs500-${normalizeMatchText(entry.artist)}-${normalizeMatchText(entry.album)}`,
-        release_id: null,
+        release_id: normalizeReleaseId(entry.release_id || entry.releaseId),
         Artist: entry.artist || "Unknown Artist",
         Title: entry.album || "Unknown Album",
         Released: "Unknown",
         Label: "",
         Format: "Vinyl",
-        cover: null,
-        thumb: null,
+        cover: entry.cover || entry.thumb || null,
+        thumb: entry.thumb || entry.cover || null,
       };
     }
 
-    function openMissingAlbumDetails(entry) {
-      void openAlbum(buildMissingEntryRecord(entry));
+    async function openMissingAlbumDetails(entry) {
+      const existingReleaseId = normalizeReleaseId(entry.release_id || entry.releaseId);
+
+      if (existingReleaseId) {
+        void openAlbum(buildMissingEntryRecord(entry));
+        return;
+      }
+
+      try {
+        const matches = await searchDiscogsReleases({
+          artist: entry.artist,
+          query: entry.album,
+          barcode: "",
+          releaseId: "",
+        });
+        const bestMatch = Array.isArray(matches) ? matches[0] : null;
+        const resolvedReleaseId = normalizeReleaseId(bestMatch?.release_id);
+        const resolvedThumb = bestMatch?.thumb || bestMatch?.cover || null;
+
+        const enrichedEntry = {
+          ...entry,
+          release_id: resolvedReleaseId,
+          thumb: resolvedThumb || entry.thumb || entry.cover || null,
+          cover: bestMatch?.cover || resolvedThumb || entry.cover || entry.thumb || null,
+        };
+
+        if (resolvedReleaseId || resolvedThumb) {
+          setRollingStoneList((currentList) => {
+            const nextList = currentList.map((currentEntry) => {
+              if (getRollingStoneEntryKey(currentEntry) !== getRollingStoneEntryKey(entry)) {
+                return currentEntry;
+              }
+
+              return {
+                ...currentEntry,
+                release_id: enrichedEntry.release_id || currentEntry.release_id || null,
+                thumb: enrichedEntry.thumb || currentEntry.thumb || null,
+                cover: enrichedEntry.cover || currentEntry.cover || null,
+              };
+            });
+
+            try {
+              localStorage.setItem(ROLLING_STONE_LIST_KEY, JSON.stringify(nextList));
+            } catch {
+              // Ignore persistence failures and keep the in-memory update.
+            }
+
+            return nextList;
+          });
+        }
+
+        void openAlbum(buildMissingEntryRecord(enrichedEntry));
+      } catch {
+        void openAlbum(buildMissingEntryRecord(entry));
+      }
     }
 
     function openMissingAlbumYouTubeMusic(entry) {
