@@ -25,6 +25,7 @@ function AlbumModal({
   const [artworkUrls, setArtworkUrls] = useState({ front: null, rear: null });
   const [artworkSide, setArtworkSide] = useState("front");
   const [isArtworkResolved, setIsArtworkResolved] = useState(false);
+  const [tracklist, setTracklist] = useState(Array.isArray(albumData.tracks) ? albumData.tracks : []);
   const artworkInputRef = useRef(null);
 
   useEffect(() => {
@@ -34,6 +35,7 @@ function AlbumModal({
     setSaveMessage("");
     setUploadMessage("");
     setArtworkSide("front");
+    setTracklist(Array.isArray(albumData.tracks) ? albumData.tracks : []);
   }, [album]);
 
   useEffect(() => {
@@ -75,6 +77,7 @@ function AlbumModal({
             front: nextFrontArtworkUrl || existingArtworkUrl || null,
             rear: nextRearArtworkUrl,
           });
+          setTracklist(Array.isArray(releaseData?.tracks) ? releaseData.tracks : []);
         }
       } catch {
         if (!isCanceled && !hasExistingArtwork) {
@@ -231,6 +234,7 @@ function AlbumModal({
     ? artworkUrls.rear
     : artworkUrls.front;
   const hasRearArtwork = Boolean(artworkUrls.rear);
+  const hasTracklist = Array.isArray(tracklist) && tracklist.length > 0;
 
   return (
     <div className="album-modal" onClick={onClose}>
@@ -341,6 +345,26 @@ function AlbumModal({
                 <strong>Genre:</strong> {genre}
               </p>
             ) : null}
+
+            <section className="album-modal__tracklist-block" aria-label="Track listing">
+              <h3 className="album-modal__tracklist-title">🎵 Track Listing</h3>
+              {hasTracklist ? (
+                <ol className="album-modal__tracklist">
+                  {tracklist.map((track, index) => (
+                    <li
+                      key={`${track.position || index + 1}-${track.title || "track"}`}
+                      className="album-modal__tracklist-item"
+                    >
+                      <span className="album-modal__tracklist-position">{track.position || `${index + 1}.`}</span>
+                      <span className="album-modal__tracklist-name">{track.title}</span>
+                      <span className="album-modal__tracklist-duration">{track.duration || ""}</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="album-modal__tracklist-empty">No track listing available for this release.</p>
+              )}
+            </section>
 
             <hr className="album-modal__rule" />
 

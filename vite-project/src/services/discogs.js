@@ -61,6 +61,15 @@ function getPersistentReleaseDetails(releaseId) {
       priceCurrency: parsedValue.priceCurrency || "USD",
       label: parsedValue.label || "",
       genres: parsedValue.genres || "",
+      tracks: Array.isArray(parsedValue.tracks)
+        ? parsedValue.tracks
+          .filter((track) => track && typeof track === "object" && track.title)
+          .map((track) => ({
+            position: String(track.position || "").trim(),
+            title: String(track.title || "").trim(),
+            duration: String(track.duration || "").trim(),
+          }))
+        : [],
     };
   } catch {
     return null;
@@ -85,6 +94,15 @@ function setPersistentReleaseDetails(releaseId, releaseDetails) {
         priceCurrency: releaseDetails.priceCurrency || "USD",
         label: releaseDetails.label || "",
         genres: releaseDetails.genres || "",
+        tracks: Array.isArray(releaseDetails.tracks)
+          ? releaseDetails.tracks
+            .filter((track) => track && typeof track === "object" && track.title)
+            .map((track) => ({
+              position: String(track.position || "").trim(),
+              title: String(track.title || "").trim(),
+              duration: String(track.duration || "").trim(),
+            }))
+          : [],
       })
     );
   } catch {
@@ -103,7 +121,23 @@ function buildItunesFallbackResult(fallbackArtworkUrl, fallbackContext) {
     priceCurrency: "USD",
     label: "",
     genres: "",
+    tracks: [],
   };
+}
+
+function parseReleaseTracklistDetailed(data) {
+  if (!Array.isArray(data?.tracklist)) {
+    return [];
+  }
+
+  return data.tracklist
+    .filter((track) => track && track.type_ !== "heading")
+    .map((track) => ({
+      position: String(track.position || "").trim(),
+      title: String(track.title || "").trim(),
+      duration: String(track.duration || "").trim(),
+    }))
+    .filter((track) => track.title);
 }
 
 async function searchItunesArtwork(fallbackContext) {
@@ -297,13 +331,8 @@ function normalizeTrackSearchText(value) {
 }
 
 function parseTracklist(data) {
-  if (!Array.isArray(data?.tracklist)) {
-    return [];
-  }
-
-  return data.tracklist
-    .filter((track) => track && track.type_ !== "heading")
-    .map((track) => String(track.title || "").trim())
+  return parseReleaseTracklistDetailed(data)
+    .map((track) => track.title)
     .filter(Boolean);
 }
 
@@ -700,6 +729,7 @@ export async function getRelease(releaseId, fallbackContext = null) {
           data.genres && data.genres.length > 0
             ? data.genres.join(", ")
             : "",
+        tracks: parseReleaseTracklistDetailed(data),
       };
 
       preloadArtworkImage(thumb);

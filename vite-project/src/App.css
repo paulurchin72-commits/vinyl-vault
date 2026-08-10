@@ -2446,6 +2446,60 @@
     margin-bottom: 18px;
   }
 
+  .album-modal__tracklist-block {
+    margin: 18px 0 0;
+  }
+
+  .album-modal__tracklist-title {
+    margin: 0 0 10px;
+    color: #fff4de;
+    font-size: 16px;
+  }
+
+  .album-modal__tracklist {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+  }
+
+  .album-modal__tracklist-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: baseline;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .album-modal__tracklist-position {
+    color: rgba(245, 197, 66, 0.88);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+
+  .album-modal__tracklist-name {
+    color: rgba(247, 237, 221, 0.92);
+    font-size: 14px;
+    min-width: 0;
+  }
+
+  .album-modal__tracklist-duration {
+    color: rgba(247, 237, 221, 0.68);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .album-modal__tracklist-empty {
+    margin: 0;
+    color: rgba(241, 235, 225, 0.72);
+    font-size: 13px;
+  }
+
   .album-modal__rule {
     margin: 20px 0 24px;
     border: 0;
