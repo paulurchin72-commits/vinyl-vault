@@ -975,6 +975,7 @@ function App() {
       year: artworkEntry.releaseData?.year || record.Released,
       label: artworkEntry.releaseData?.label || record.Label || "",
       genres: artworkEntry.releaseData?.genres || record.genres || "",
+      tracks: artworkEntry.releaseData?.tracks || record.tracks || [],
     };
   }
 
@@ -2793,7 +2794,13 @@ function App() {
             <ul className="rolling-stone-panel__list">
               {rollingStoneRows.map((entry) => {
                 const artworkUrl = entry.ownedRecord
-                  ? (customArtworkByAlbumKey[getAlbumKey(entry.ownedRecord)] || entry.ownedRecord.cover || entry.ownedRecord.thumb || null)
+                  ? (
+                      customArtworkByAlbumKey[getAlbumKey(entry.ownedRecord)] ||
+                      getArtworkEntry(entry.ownedRecord).coverUrl ||
+                      entry.ownedRecord.cover ||
+                      entry.ownedRecord.thumb ||
+                      null
+                    )
                   : (entry.thumb || entry.cover || null);
 
                 return (
@@ -2994,14 +3001,16 @@ function App() {
         </aside>
 
         <div className="app-shell__inner">
-          <header className="app-hero">
-            <p className="app-kicker">Music & Memories</p>
-            <h1 className="app-title">
-              <img src={mmMonogramLogo} alt="M&amp;M" className="app-title__logo" />
-              <span>Music &amp; Memories</span>
-            </h1>
-            <p className="app-tagline">Every record has a story.</p>
-          </header>
+          {location.pathname !== "/" && location.pathname !== "/home" ? (
+            <header className="app-hero">
+              <p className="app-kicker">Music & Memories</p>
+              <h1 className="app-title">
+                <img src={mmMonogramLogo} alt="M&amp;M" className="app-title__logo" />
+                <span>Music &amp; Memories</span>
+              </h1>
+              <p className="app-tagline">Every record has a story.</p>
+            </header>
+          ) : null}
 
           <Routes>
             <Route path="/" element={<Navigate to="/home" replace />} />

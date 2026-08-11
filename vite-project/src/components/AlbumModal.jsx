@@ -288,8 +288,6 @@ function AlbumModal({
               </div>
             )}
           </div>
-          <p className="album-modal__artwork-hint">Double-click cover art to upload your own image.</p>
-
           {hasRearArtwork ? (
             <div className="album-modal__artwork-toggle" aria-label="Artwork side toggle">
               <button
@@ -310,6 +308,8 @@ function AlbumModal({
               </button>
             </div>
           ) : null}
+
+          <p className="album-modal__artwork-hint">Double-click cover art to upload your own image.</p>
 
           <div className="album-modal__content">
             <p className="album-modal__eyebrow">
