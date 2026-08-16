@@ -4,11 +4,27 @@ import { getRelease } from "../services/discogs";
 const MAX_CUSTOM_ARTWORK_DIMENSION = 800;
 const CUSTOM_ARTWORK_QUALITY = 0.78;
 
+function normalizeTracklistEntries(tracks) {
+  if (!Array.isArray(tracks)) {
+    return [];
+  }
+
+  return tracks
+    .filter((track) => track && typeof track === "object")
+    .map((track, index) => ({
+      position: String(track.position || track.track_position || track.number || track.trackNo || index + 1).trim(),
+      title: String(track.title || track.name || "").trim(),
+      duration: String(track.duration || track.length || "").trim(),
+    }))
+    .filter((track) => track.title);
+}
+
 function AlbumModal({
   album,
   onClose,
   onSave,
   onMetadataChange,
+  onTrackMemorySave,
   onArtistClick,
   onCustomArtworkUpload,
   onCustomArtworkRemove,
@@ -25,7 +41,10 @@ function AlbumModal({
   const [artworkUrls, setArtworkUrls] = useState({ front: null, rear: null });
   const [artworkSide, setArtworkSide] = useState("front");
   const [isArtworkResolved, setIsArtworkResolved] = useState(false);
-  const [tracklist, setTracklist] = useState(Array.isArray(albumData.tracks) ? albumData.tracks : []);
+  const [tracklist, setTracklist] = useState(() => normalizeTracklistEntries(albumData.tracks));
+  const [activeTrackMemoryKey, setActiveTrackMemoryKey] = useState(null);
+  const [trackMemoryDraft, setTrackMemoryDraft] = useState("");
+  const [trackMemoryMessage, setTrackMemoryMessage] = useState("");
   const artworkInputRef = useRef(null);
 
   useEffect(() => {
@@ -35,7 +54,10 @@ function AlbumModal({
     setSaveMessage("");
     setUploadMessage("");
     setArtworkSide("front");
-    setTracklist(Array.isArray(albumData.tracks) ? albumData.tracks : []);
+    setTracklist(normalizeTracklistEntries(albumData.tracks));
+    setActiveTrackMemoryKey(null);
+    setTrackMemoryDraft("");
+    setTrackMemoryMessage("");
   }, [album]);
 
   useEffect(() => {
@@ -77,7 +99,13 @@ function AlbumModal({
             front: nextFrontArtworkUrl || existingArtworkUrl || null,
             rear: nextRearArtworkUrl,
           });
-          setTracklist(Array.isArray(releaseData?.tracks) ? releaseData.tracks : []);
+
+          const nextTracklist = normalizeTracklistEntries(
+            [releaseData?.tracks, albumData.tracks, albumData.tracklist].find(
+              (candidateTracks) => Array.isArray(candidateTracks) && candidateTracks.length > 0
+            ) || []
+          );
+          setTracklist(nextTracklist);
         }
       } catch {
         if (!isCanceled && !hasExistingArtwork) {
@@ -141,6 +169,29 @@ function AlbumModal({
     const url = `https://music.youtube.com/search?q=${encodedSearch}`;
 
     window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  function getTrackMemoryKey(track, index) {
+    return `${track.position || index + 1}:${track.title}`;
+  }
+
+  function handleOpenTrackMemory(track, index) {
+    const trackKey = getTrackMemoryKey(track, index);
+    setActiveTrackMemoryKey(trackKey);
+    setTrackMemoryDraft(albumData.trackMemories?.[trackKey] || "");
+    setTrackMemoryMessage("");
+  }
+
+  function handleSaveTrackMemory(track, index) {
+    const trackKey = getTrackMemoryKey(track, index);
+    onTrackMemorySave?.(album, trackKey, trackMemoryDraft);
+    setTrackMemoryMessage("Song memory saved");
+  }
+
+  function handleOpenTrackYouTube(track) {
+    const search = `${albumData.Artist || ""} ${albumData.Title || ""} ${track.title || ""}`.trim();
+    const encodedSearch = encodeURIComponent(search);
+    window.open(`https://music.youtube.com/search?q=${encodedSearch}`, "_blank", "noopener,noreferrer");
   }
 
   function readFileAsDataUrl(file) {
@@ -356,8 +407,48 @@ function AlbumModal({
                       className="album-modal__tracklist-item"
                     >
                       <span className="album-modal__tracklist-position">{track.position || `${index + 1}.`}</span>
-                      <span className="album-modal__tracklist-name">{track.title}</span>
+                      <button
+                        type="button"
+                        className="album-modal__tracklist-name"
+                        onClick={() => handleOpenTrackYouTube(track)}
+                        title={`Find ${track.title} on YouTube Music`}
+                      >
+                        {track.title}
+                      </button>
                       <span className="album-modal__tracklist-duration">{track.duration || ""}</span>
+                      <button
+                        type="button"
+                        className="album-modal__tracklist-youtube-button"
+                        onClick={() => handleOpenTrackYouTube(track)}
+                      >
+                        YouTube
+                      </button>
+                      <button
+                        type="button"
+                        className="album-modal__tracklist-memory-button"
+                        onClick={() => handleOpenTrackMemory(track, index)}
+                      >
+                        {albumData.trackMemories?.[getTrackMemoryKey(track, index)] ? "Edit memory" : "Add memory"}
+                      </button>
+                      {activeTrackMemoryKey === getTrackMemoryKey(track, index) ? (
+                        <div className="album-modal__track-memory-editor">
+                          <textarea
+                            aria-label={`Memory for ${track.title}`}
+                            className="album-modal__track-memory-textarea"
+                            placeholder={`What does ${track.title} bring back?`}
+                            value={trackMemoryDraft}
+                            onChange={(event) => setTrackMemoryDraft(event.target.value)}
+                          />
+                          <button
+                            type="button"
+                            className="album-modal__tracklist-memory-button"
+                            onClick={() => handleSaveTrackMemory(track, index)}
+                          >
+                            Save memory
+                          </button>
+                          {trackMemoryMessage ? <span className="album-modal__track-memory-message">{trackMemoryMessage}</span> : null}
+                        </div>
+                      ) : null}
                     </li>
                   ))}
                 </ol>

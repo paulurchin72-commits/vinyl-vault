@@ -2242,8 +2242,23 @@
     linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
 }
 
+.artwork-state--idle {
+  background:
+    radial-gradient(circle at center, rgba(245, 197, 66, 0.08), transparent 32%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+}
+
 .artwork-state--modal {
   min-height: 100%;
+}
+
+.artwork-state__ghost {
+  width: 58px;
+  height: 58px;
+  border-radius: 999px;
+  border: 1px solid rgba(245, 197, 66, 0.2);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 12px rgba(245, 197, 66, 0.06);
 }
 
 .artwork-state__monogram {
@@ -2484,22 +2499,90 @@
   }
 
   .album-modal__tracklist {
-    list-style: none;
     margin: 0;
-    padding: 0;
+    padding-left: 1.5rem;
     display: grid;
     gap: 8px;
+    list-style: decimal;
+    list-style-position: outside;
   }
 
   .album-modal__tracklist-item {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
     gap: 10px;
     align-items: baseline;
-    padding: 8px 10px;
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 0;
+    background: rgba(255, 255, 255, 0.015);
+  }
+
+  .album-modal__tracklist-name {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: rgba(247, 237, 221, 0.92);
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .album-modal__tracklist-name:hover,
+  .album-modal__tracklist-name:focus-visible {
+    color: #f5c542;
+    text-decoration: underline;
+  }
+
+  .album-modal__tracklist-memory-button {
+    padding: 5px 8px;
+    border: 1px solid rgba(245, 197, 66, 0.35);
+    border-radius: 8px;
+    background: rgba(245, 197, 66, 0.08);
+    color: #f5c542;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .album-modal__tracklist-youtube-button {
+    padding: 5px 8px;
+    border: 1px solid rgba(255, 96, 96, 0.42);
+    border-radius: 8px;
+    background: rgba(255, 96, 96, 0.1);
+    color: #ffaaa5;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .album-modal__track-memory-editor {
+    grid-column: 2 / -1;
+    display: grid;
+    gap: 8px;
+  }
+
+  .album-modal__track-memory-textarea {
+    width: 100%;
+    min-height: 72px;
+    box-sizing: border-box;
+    resize: vertical;
+    padding: 8px;
+    border: 1px solid rgba(245, 197, 66, 0.35);
+    border-radius: 8px;
+    background: #2a2a2a;
+    color: #fff;
+    font: inherit;
+    font-size: 13px;
+  }
+
+  .album-modal__track-memory-message {
+    color: #f5c542;
+    font-size: 12px;
+  }
+
+  .album-modal__tracklist-item:last-child {
+    border-bottom: 0;
   }
 
   .album-modal__tracklist-position {
@@ -2507,12 +2590,13 @@
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.04em;
+    min-width: 2.1rem;
   }
 
   .album-modal__tracklist-name {
-    color: rgba(247, 237, 221, 0.92);
     font-size: 14px;
     min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   .album-modal__tracklist-duration {
@@ -2775,11 +2859,10 @@
     }
 
     .album-modal__layout {
-      grid-template-columns: minmax(260px, 420px) minmax(0, 1fr);
       grid-template-areas:
-        "art content"
-        "toggle content"
-        "hint content";
+        "art toggle content"
+        "hint hint content";
+      grid-template-columns: minmax(260px, 420px) auto minmax(0, 1fr);
       gap: 28px;
       align-items: flex-start;
     }

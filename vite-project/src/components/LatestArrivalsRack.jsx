@@ -99,8 +99,6 @@ function LatestArrivalsRack({ albums = [], onSelect = () => {} }) {
       </header>
 
       <div className="latest-arrivals-rack__wood-frame" aria-hidden="true">
-        <span className="latest-arrivals-rack__wood-grain latest-arrivals-rack__wood-grain--top" />
-        <span className="latest-arrivals-rack__wood-grain latest-arrivals-rack__wood-grain--bottom" />
       </div>
 
       <div className="latest-arrivals-rack__viewport" role="list" aria-label="Latest album sleeves">
@@ -205,22 +203,6 @@ function LatestArrivalsRack({ albums = [], onSelect = () => {} }) {
           box-shadow:
             inset 0 1px 0 rgba(255, 214, 152, 0.34),
             inset 0 -7px 12px rgba(55, 30, 12, 0.48);
-        }
-
-        .latest-arrivals-rack__wood-grain {
-          position: absolute;
-          left: 10px;
-          right: 10px;
-          height: 1px;
-          background: linear-gradient(90deg, transparent, rgba(255, 214, 151, 0.48), transparent);
-        }
-
-        .latest-arrivals-rack__wood-grain--top {
-          top: 9px;
-        }
-
-        .latest-arrivals-rack__wood-grain--bottom {
-          bottom: 8px;
         }
 
         .latest-arrivals-rack__viewport {

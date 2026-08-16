@@ -164,7 +164,15 @@ function createArtworkManager() {
     const request = getCachedArtworkUrl(releaseId)
       .then(async (cachedArtworkUrl) => {
         if (cachedArtworkUrl) {
-          const entry = buildFinalEntry({ thumb: cachedArtworkUrl });
+          const releaseData = await fetchRelease(releaseId, {
+            artist: album.Artist,
+            title: album.Title,
+            year: album.Released,
+          });
+          const entry = buildFinalEntry({
+            ...releaseData,
+            thumb: cachedArtworkUrl,
+          });
           releaseCache.set(releaseId, {
             status: "ready",
             entry,
@@ -174,7 +182,15 @@ function createArtworkManager() {
 
         const syncOutcome = await syncReleaseArtwork(releaseId);
         if (syncOutcome.artworkUrl) {
-          const entry = buildFinalEntry({ thumb: syncOutcome.artworkUrl });
+          const releaseData = await fetchRelease(releaseId, {
+            artist: album.Artist,
+            title: album.Title,
+            year: album.Released,
+          });
+          const entry = buildFinalEntry({
+            ...releaseData,
+            thumb: syncOutcome.artworkUrl,
+          });
           releaseCache.set(releaseId, {
             status: "ready",
             entry,

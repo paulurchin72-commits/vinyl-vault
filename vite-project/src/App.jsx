@@ -316,6 +316,12 @@ function normalizeSavedAlbumDetails(value) {
         albumKey,
         {
           memory: typeof entry.memory === "string" ? entry.memory : "",
+          trackMemories: entry.trackMemories && typeof entry.trackMemories === "object" && !Array.isArray(entry.trackMemories)
+            ? Object.fromEntries(
+                Object.entries(entry.trackMemories)
+                  .filter(([trackKey, trackMemory]) => trackKey && typeof trackMemory === "string")
+              )
+            : {},
           favorite: Boolean(entry.favorite),
           rating: Number(entry.rating) || 0,
           artist: typeof entry.artist === "string" ? entry.artist : "",
@@ -975,7 +981,9 @@ function App() {
       year: artworkEntry.releaseData?.year || record.Released,
       label: artworkEntry.releaseData?.label || record.Label || "",
       genres: artworkEntry.releaseData?.genres || record.genres || "",
-      tracks: artworkEntry.releaseData?.tracks || record.tracks || [],
+      tracks: [artworkEntry.releaseData?.tracks, record.tracks].find(
+        (candidateTracks) => Array.isArray(candidateTracks) && candidateTracks.length > 0
+      ) || [],
     };
   }
 
@@ -1735,6 +1743,7 @@ function App() {
         ...currentDetails,
         [details.albumKey]: {
           memory: details.memory,
+          trackMemories: details.trackMemories || {},
           favorite: details.favorite,
           rating: details.rating,
           artist: details.Artist || "",
@@ -1776,6 +1785,7 @@ function App() {
         ...currentDetails,
         [details.albumKey]: {
           ...currentEntry,
+          trackMemories: details.trackMemories || currentEntry.trackMemories || {},
           favorite: details.favorite,
           rating: details.rating,
           artist: details.Artist || currentEntry.artist || "",
@@ -1812,6 +1822,47 @@ function App() {
     }
 
     setSelectedAlbum(null);
+  }
+
+  function saveTrackMemory(album, trackKey, memoryValue) {
+    if (!album?.albumKey || !trackKey) {
+      return;
+    }
+
+    setSavedAlbumDetails((currentDetails) => {
+      const currentEntry = currentDetails[album.albumKey] || {};
+      const nextTrackMemories = {
+        ...(currentEntry.trackMemories || {}),
+        [trackKey]: memoryValue,
+      };
+      const nextDetails = {
+        ...currentDetails,
+        [album.albumKey]: {
+          ...currentEntry,
+          trackMemories: nextTrackMemories,
+        },
+      };
+
+      try {
+        localStorage.setItem(SAVED_MEMORIES_KEY, JSON.stringify(nextDetails));
+      } catch {
+        // Keep the track memory in memory if storage is unavailable.
+      }
+
+      return nextDetails;
+    });
+
+    setSelectedAlbum((currentAlbum) =>
+      currentAlbum && currentAlbum.albumKey === album.albumKey
+        ? {
+            ...currentAlbum,
+            trackMemories: {
+              ...(currentAlbum.trackMemories || {}),
+              [trackKey]: memoryValue,
+            },
+          }
+        : currentAlbum
+    );
   }
 
   function saveCustomArtwork(album, artworkDataUrl) {
@@ -2750,6 +2801,36 @@ function App() {
         .sort((firstEntry, secondEntry) => firstEntry.rank - secondEntry.rank);
       })();
 
+    useEffect(() => {
+      if (!rollingStoneRows.length) {
+        return;
+      }
+
+      const pendingRecords = rollingStoneRows
+        .map((entry) => entry.ownedRecord)
+        .filter((record) => {
+          if (!record) {
+            return false;
+          }
+
+          const albumKey = getAlbumKey(record);
+          const artworkEntry = artworkEntries[albumKey] || { status: "idle", coverUrl: null };
+
+          return (
+            !customArtworkByAlbumKey[albumKey] &&
+            !artworkEntry.coverUrl &&
+            artworkEntry.status !== "loading" &&
+            artworkEntry.status !== "missing"
+          );
+        })
+        .slice(0, 12);
+
+      pendingRecords.forEach((record) => {
+        const albumKey = getAlbumKey(record);
+        artworkManager.ensureAlbumArtwork({ ...record, albumKey }, getRelease).catch(() => {});
+      });
+    }, [rollingStoneRows, artworkEntries, customArtworkByAlbumKey]);
+
     const ownedCount = rollingStoneRows.filter((entry) => Boolean(entry.ownedRecord)).length;
 
     return (
@@ -3080,6 +3161,7 @@ function App() {
             onClose={closeAlbum}
             onSave={saveAlbumDetails}
             onMetadataChange={saveAlbumMetadata}
+            onTrackMemorySave={saveTrackMemory}
             onArtistClick={openArtistView}
             onCustomArtworkUpload={saveCustomArtwork}
             onCustomArtworkRemove={clearCustomArtwork}

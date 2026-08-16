@@ -51,6 +51,10 @@ function getPersistentReleaseDetails(releaseId) {
       return null;
     }
 
+    if (!Array.isArray(parsedValue.tracks) || parsedValue.tracks.length === 0) {
+      return null;
+    }
+
     return {
       title: parsedValue.title || "",
       year: parsedValue.year || "",
@@ -685,7 +689,12 @@ export async function getRelease(releaseId, fallbackContext = null) {
   }
 
   if (releaseDataById.has(normalizedReleaseId)) {
-    return releaseDataById.get(normalizedReleaseId);
+    const cachedReleaseDetails = releaseDataById.get(normalizedReleaseId);
+    if (Array.isArray(cachedReleaseDetails?.tracks) && cachedReleaseDetails.tracks.length > 0) {
+      return cachedReleaseDetails;
+    }
+
+    releaseDataById.delete(normalizedReleaseId);
   }
 
   if (inFlightReleaseById.has(normalizedReleaseId)) {
