@@ -680,7 +680,6 @@ function App() {
   const [surpriseSelection, setSurpriseSelection] = useState(null);
   const [activeFilter, setActiveFilter] = useState("all");
   const [collectionSort, setCollectionSort] = useState("artist-asc");
-  const [collectionView, setCollectionView] = useState("grid");
   const [collectionLetter, setCollectionLetter] = useState("A");
   const [recentlyViewed, setRecentlyViewed] = useState(() => loadRecentlyViewed());
   const [playedAlbumKeys, setPlayedAlbumKeys] = useState(() =>
@@ -2382,47 +2381,6 @@ function App() {
     );
   }
 
-  function renderAlbumCrate(recordList, hintText, highlightBySurprise = false) {
-    if (!recordList.length) {
-      return <p className="empty-state">No albums match this view yet.</p>;
-    }
-
-    return (
-      <>
-        <div className="results-row">
-          <h2 className="results-row__title">{recordList.length} Records</h2>
-          <p className="results-row__hint">{hintText}</p>
-        </div>
-
-        <div className="collection-crate-shell">
-          <div className="collection-crate-rim" aria-hidden="true" />
-          <ul className="collection-crate" aria-label="Crate view albums">
-            {recordList.map((record) => {
-              const albumKey = getAlbumKey(record);
-              const savedDetails = savedAlbumDetails[albumKey] || {};
-
-              return (
-                <AlbumCard
-                  key={getRecordListKey(record)}
-                  record={record}
-                  onClick={openAlbum}
-                  onArtistClick={openArtistView}
-                  onVisible={handleAlbumCardVisible}
-                  id={getAlbumCardId(albumKey)}
-                  highlighted={highlightBySurprise && surpriseSelection?.albumKey === albumKey}
-                  favorite={savedDetails.favorite}
-                  rating={savedDetails.rating}
-                  cover={getArtworkEntry(record).coverUrl}
-                  artworkStatus={getArtworkEntry(record).status}
-                />
-              );
-            })}
-          </ul>
-        </div>
-      </>
-    );
-  }
-
   function HomePage() {
     const latestArrivalAlbums = [...records]
       .map((record) => {
@@ -2735,26 +2693,6 @@ function App() {
             <option value="year-oldest">Year (Oldest)</option>
           </select>
 
-          <div className="collection-view-toggle" role="tablist" aria-label="Collection view mode">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={collectionView === "grid"}
-              className={`collection-view-toggle__button${collectionView === "grid" ? " is-active" : ""}`}
-              onClick={() => setCollectionView("grid")}
-            >
-              Grid
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={collectionView === "crate"}
-              className={`collection-view-toggle__button${collectionView === "crate" ? " is-active" : ""}`}
-              onClick={() => setCollectionView("crate")}
-            >
-              Crate
-            </button>
-          </div>
         </div>
 
         <div className="filter-bar" role="toolbar" aria-label="Quick collection filters">
@@ -2790,9 +2728,7 @@ function App() {
 
         {message && <p className="status-message">{message}</p>}
         <div className="collection-page-compact">
-          {collectionView === "crate"
-            ? renderAlbumCrate(sortedCollectionRecords, "Vinyl crate view", true)
-            : renderAlbumGrid(sortedCollectionRecords, "Premium dark glass collection view", true)}
+          {renderAlbumGrid(sortedCollectionRecords, "Premium dark glass collection view", true)}
         </div>
       </>
     );

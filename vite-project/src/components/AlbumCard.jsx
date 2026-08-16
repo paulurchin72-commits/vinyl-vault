@@ -145,10 +145,14 @@ function AlbumCard({
             <span className="artwork-spinner" />
             <span className="artwork-state__label">Loading artwork</span>
           </div>
-        ) : (
+        ) : artworkStatus === "missing" ? (
           <div className="artwork-state artwork-state--placeholder" aria-label="No artwork available">
             <span className="artwork-state__monogram">M&amp;M</span>
             <span className="artwork-state__label">Music &amp; Memories</span>
+          </div>
+        ) : (
+          <div className="artwork-state artwork-state--idle" aria-label="Artwork pending">
+            <span className="artwork-state__ghost" aria-hidden="true" />
           </div>
         )}
       </div>
