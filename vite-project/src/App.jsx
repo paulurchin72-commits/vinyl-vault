@@ -2437,12 +2437,15 @@ function App() {
         onClick: () => navigate("/memories"),
       },
       {
-        label: "Discogs Worth",
-        value: displayedWorthHasValue
-          ? formatWorthInGbp(displayedWorthTotal, displayedWorthCurrency)
-          : "N/A",
-        hint: displayedWorthHint,
-        onClick: openWorthDetails,
+        label: "Albums Explored",
+        value: `${Math.max(0, records.length - notListenedAlbumKeySet.size)}/${records.length}`,
+        hint: "Opened from your collection",
+        onClick: () => {
+          setActiveFilter("recent");
+          setCollectionLetter("ALL");
+          setSearch("");
+          navigate("/collection");
+        },
       },
     ];
     const memoryEntries = memoriesByArtist.flatMap((group) => group.entries);
