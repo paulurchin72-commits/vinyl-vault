@@ -1532,7 +1532,9 @@ function App() {
 
     Object.entries(savedAlbumDetails).forEach(([albumKey, savedDetails]) => {
       const memoryText = savedDetails?.memory?.trim();
-      if (!memoryText) {
+      const trackMemoryEntries = Object.entries(savedDetails?.trackMemories || {})
+        .filter(([, trackMemory]) => String(trackMemory || "").trim());
+      if (!memoryText && !trackMemoryEntries.length) {
         return;
       }
 
@@ -1567,14 +1569,42 @@ function App() {
         groupedMemories.set(artist, []);
       }
 
-      groupedMemories.get(artist).push({
-        albumKey,
-        recordKey: `memory-${albumKey}`,
-        title,
-        released,
-        memory: memoryText,
-        record: recordForOpen,
-        artworkUrl,
+      if (memoryText) {
+        groupedMemories.get(artist).push({
+          albumKey,
+          recordKey: `memory-${albumKey}`,
+          title,
+          released,
+          memory: memoryText,
+          record: recordForOpen,
+          artworkUrl,
+          memoryType: "album",
+        });
+      }
+
+      trackMemoryEntries.forEach(([trackKey, trackMemory]) => {
+        const normalizedTrackMemory = String(trackMemory || "").trim();
+        if (!normalizedTrackMemory) {
+          return;
+        }
+
+        const separatorIndex = trackKey.indexOf(":");
+        const trackTitle = (separatorIndex >= 0 ? trackKey.slice(separatorIndex + 1) : trackKey).trim();
+        if (!trackTitle) {
+          return;
+        }
+
+        groupedMemories.get(artist).push({
+          albumKey,
+          recordKey: `track-memory-${albumKey}-${trackKey}`,
+          title,
+          trackTitle,
+          released,
+          memory: normalizedTrackMemory,
+          record: recordForOpen,
+          artworkUrl,
+          memoryType: "track",
+        });
       });
     });
 
@@ -2474,7 +2504,7 @@ function App() {
         : "No Discogs price data yet";
     const worthCoverageLabel = `${collectionWorthEstimate.sampled}/${collectionWorthEstimate.sampleSize} priced`;
 
-    const memoryCount = Object.values(savedAlbumDetails).filter((entry) => entry?.memory?.trim()).length;
+    const memoryCount = memoriesByArtist.reduce((count, group) => count + group.entries.length, 0);
     const dashboardStats = [
       { label: "Albums", value: records.length || 0, hint: "Curated sleeves" },
       { label: "Artists", value: collectionStats.totalArtists, hint: "Across the archive" },
@@ -3202,7 +3232,8 @@ function App() {
                             className="memories-group__album"
                             onClick={() => openAlbum(entry.record)}
                           >
-                            {entry.title} {entry.released ? `(${entry.released})` : ""}
+                            {entry.memoryType === "track" ? `${entry.trackTitle} • ${entry.title}` : entry.title}
+                            {entry.released ? ` (${entry.released})` : ""}
                           </button>
                           <p className="memories-group__text">{entry.memory}</p>
                         </div>

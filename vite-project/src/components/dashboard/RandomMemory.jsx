@@ -15,7 +15,11 @@ function RandomMemory({ memoryEntry, onOpenAlbum, onArtistClick }) {
               {memoryEntry.record.Artist}
             </button>
           </p>
-          <p className="dashboard-memory__album">{memoryEntry.title}</p>
+          <p className="dashboard-memory__album">
+            {memoryEntry.memoryType === "track"
+              ? `${memoryEntry.trackTitle} • ${memoryEntry.title}`
+              : memoryEntry.title}
+          </p>
           <p className="dashboard-memory__text">{memoryEntry.memory}</p>
           <button type="button" className="collection-button" onClick={() => onOpenAlbum(memoryEntry.record)}>
             Open Album
