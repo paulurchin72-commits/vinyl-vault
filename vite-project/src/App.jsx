@@ -66,6 +66,8 @@ function isTracedAlbumKey(traceStore, albumKey) {
 
 const SAVED_MEMORIES_KEY = "the-memory-box:saved-memories";
 const RECENTLY_VIEWED_KEY = "the-memory-box:recently-viewed";
+const PLAYED_ALBUMS_KEY = "the-memory-box:played-albums";
+const PLAYED_TRACKS_KEY = "the-memory-box:played-tracks";
 const ADDED_RECORDS_KEY = "the-memory-box:added-records";
 const CUSTOM_ARTWORK_KEY = "the-memory-box:custom-artwork";
 const ROLLING_STONE_LIST_KEY = "the-memory-box:rolling-stone-top-500";
@@ -219,6 +221,14 @@ function normalizeRecentlyViewedEntries(storedValue) {
 
 function loadRecentlyViewed() {
   return normalizeRecentlyViewedEntries(loadStoredJson(RECENTLY_VIEWED_KEY, []));
+}
+
+function normalizePlayedKeys(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(new Set(value.map((entry) => String(entry || "").trim()).filter(Boolean)));
 }
 
 function normalizeAddedRecords(storedValue) {
@@ -673,6 +683,12 @@ function App() {
   const [collectionView, setCollectionView] = useState("grid");
   const [collectionLetter, setCollectionLetter] = useState("A");
   const [recentlyViewed, setRecentlyViewed] = useState(() => loadRecentlyViewed());
+  const [playedAlbumKeys, setPlayedAlbumKeys] = useState(() =>
+    normalizePlayedKeys(loadStoredJson(PLAYED_ALBUMS_KEY, []))
+  );
+  const [playedTrackKeys, setPlayedTrackKeys] = useState(() =>
+    normalizePlayedKeys(loadStoredJson(PLAYED_TRACKS_KEY, []))
+  );
   const [artworkEntries, setArtworkEntries] = useState(() => artworkManager.getSnapshot());
   const [customArtworkByAlbumKey, setCustomArtworkByAlbumKey] = useState(() =>
     loadStoredJson(CUSTOM_ARTWORK_KEY, {})
@@ -708,6 +724,7 @@ function App() {
   const [tonightPickShuffleSeed, setTonightPickShuffleSeed] = useState(0);
   const records = useMemo(() => [...addedRecords, ...baseRecords], [addedRecords, baseRecords]);
   const recentlyViewedAlbumKeys = recentlyViewed.map((entry) => entry.albumKey);
+  const playedAlbumKeySet = useMemo(() => new Set(playedAlbumKeys), [playedAlbumKeys]);
 
   useEffect(() => {
     worthByReleaseRef.current = worthByRelease;
@@ -1054,6 +1071,7 @@ function App() {
     { id: "1990s", label: "📅 1990s" },
     { id: "2000plus", label: "📅 2000+" },
     { id: "recent", label: "🎲 Recently Viewed" },
+    { id: "played", label: "▶ Played" },
   ];
 
   function recordMatchesFilter(record, filterId) {
@@ -1085,6 +1103,8 @@ function App() {
         return releaseYear >= 2000;
       case "recent":
         return recentlyViewedAlbumKeys.includes(albumKey);
+      case "played":
+        return playedAlbumKeySet.has(albumKey);
       case "all":
       default:
         return true;
@@ -1926,6 +1946,37 @@ function App() {
     );
   }
 
+  function markPlayed(album, trackKey = "") {
+    if (!album) {
+      return;
+    }
+
+    const albumKey = getAlbumKey(album);
+    const nextTrackKey = trackKey ? `${albumKey}::${trackKey}` : "";
+
+    setPlayedAlbumKeys((currentKeys) => {
+      const nextKeys = currentKeys.includes(albumKey) ? currentKeys : [...currentKeys, albumKey];
+      try {
+        localStorage.setItem(PLAYED_ALBUMS_KEY, JSON.stringify(nextKeys));
+      } catch {
+        // Keep played state in memory if storage is unavailable.
+      }
+      return nextKeys;
+    });
+
+    if (nextTrackKey) {
+      setPlayedTrackKeys((currentKeys) => {
+        const nextKeys = currentKeys.includes(nextTrackKey) ? currentKeys : [...currentKeys, nextTrackKey];
+        try {
+          localStorage.setItem(PLAYED_TRACKS_KEY, JSON.stringify(nextKeys));
+        } catch {
+          // Keep played state in memory if storage is unavailable.
+        }
+        return nextKeys;
+      });
+    }
+  }
+
   function saveCustomArtwork(album, artworkDataUrl) {
     if (!album) {
       return;
@@ -2000,6 +2051,8 @@ function App() {
         addedRecords,
         savedAlbumDetails,
         recentlyViewed,
+          playedAlbumKeys,
+          playedTrackKeys,
         customArtworkByAlbumKey,
         rollingStoneList,
         manualCollectionWorth,
@@ -2037,6 +2090,8 @@ function App() {
     const nextAddedRecords = normalizeAddedRecords(backupData?.addedRecords || []);
     const nextSavedAlbumDetails = normalizeSavedAlbumDetails(backupData?.savedAlbumDetails || {});
     const nextRecentlyViewed = normalizeRecentlyViewedEntries(backupData?.recentlyViewed || []);
+    const nextPlayedAlbumKeys = normalizePlayedKeys(backupData?.playedAlbumKeys || []);
+    const nextPlayedTrackKeys = normalizePlayedKeys(backupData?.playedTrackKeys || []);
     const nextCustomArtwork = normalizeCustomArtworkEntries(backupData?.customArtworkByAlbumKey || {});
     const nextRollingStoneList = normalizeRollingStoneEntries(backupData?.rollingStoneList || []);
     const nextManualCollectionWorth = normalizeManualCollectionWorth(backupData?.manualCollectionWorth);
@@ -2045,6 +2100,8 @@ function App() {
     setAddedRecords(nextAddedRecords);
     setSavedAlbumDetails(nextSavedAlbumDetails);
     setRecentlyViewed(nextRecentlyViewed);
+    setPlayedAlbumKeys(nextPlayedAlbumKeys);
+    setPlayedTrackKeys(nextPlayedTrackKeys);
     setCustomArtworkByAlbumKey(nextCustomArtwork);
     setRollingStoneList(nextRollingStoneList);
     setManualCollectionWorth(nextManualCollectionWorth);
@@ -2056,6 +2113,8 @@ function App() {
       localStorage.setItem(ADDED_RECORDS_KEY, JSON.stringify(nextAddedRecords));
       localStorage.setItem(SAVED_MEMORIES_KEY, JSON.stringify(nextSavedAlbumDetails));
       localStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify(nextRecentlyViewed));
+      localStorage.setItem(PLAYED_ALBUMS_KEY, JSON.stringify(nextPlayedAlbumKeys));
+      localStorage.setItem(PLAYED_TRACKS_KEY, JSON.stringify(nextPlayedTrackKeys));
       localStorage.setItem(CUSTOM_ARTWORK_KEY, JSON.stringify(nextCustomArtwork));
       localStorage.setItem(ROLLING_STONE_LIST_KEY, JSON.stringify(nextRollingStoneList));
       if (nextManualCollectionWorth) {
@@ -2437,11 +2496,11 @@ function App() {
         onClick: () => navigate("/memories"),
       },
       {
-        label: "Albums Explored",
-        value: `${Math.max(0, records.length - notListenedAlbumKeySet.size)}/${records.length}`,
-        hint: "Opened from your collection",
+        label: "Albums Played",
+        value: `${playedAlbumKeys.filter((albumKey) => records.some((record) => getAlbumKey(record) === albumKey)).length}/${records.length}`,
+        hint: "Played on YouTube or at home",
         onClick: () => {
-          setActiveFilter("recent");
+          setActiveFilter("played");
           setCollectionLetter("ALL");
           setSearch("");
           navigate("/collection");
@@ -2464,6 +2523,7 @@ function App() {
     }
 
     function handleOpenYouTubeMusic(record) {
+      markPlayed(record);
       const search = `${record?.Artist || ""} ${record?.Title || ""}`.trim();
       const encodedSearch = encodeURIComponent(search);
       window.open(`https://music.youtube.com/search?q=${encodedSearch}`, "_blank", "noopener,noreferrer");
@@ -3291,6 +3351,9 @@ function App() {
             onSave={saveAlbumDetails}
             onMetadataChange={saveAlbumMetadata}
             onTrackMemorySave={saveTrackMemory}
+                  onTrackPlayed={markPlayed}
+                  playedAlbumKeys={playedAlbumKeySet}
+                  playedTrackKeys={playedTrackKeys}
             onArtistClick={openArtistView}
             onCustomArtworkUpload={saveCustomArtwork}
             onCustomArtworkRemove={clearCustomArtwork}

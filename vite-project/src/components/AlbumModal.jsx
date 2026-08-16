@@ -25,6 +25,9 @@ function AlbumModal({
   onSave,
   onMetadataChange,
   onTrackMemorySave,
+  onTrackPlayed,
+  playedAlbumKeys,
+  playedTrackKeys,
   onArtistClick,
   onCustomArtworkUpload,
   onCustomArtworkRemove,
@@ -164,6 +167,7 @@ function AlbumModal({
   }
 
   function handleOpenYouTubeMusic() {
+    onTrackPlayed?.(album);
     const search = `${albumData.Artist || ""} ${albumData.Title || ""}`.trim();
     const encodedSearch = encodeURIComponent(search);
     const url = `https://music.youtube.com/search?q=${encodedSearch}`;
@@ -189,9 +193,15 @@ function AlbumModal({
   }
 
   function handleOpenTrackYouTube(track) {
+    const trackKey = getTrackMemoryKey(track, track.position || 0);
+    onTrackPlayed?.(album, trackKey);
     const search = `${albumData.Artist || ""} ${albumData.Title || ""} ${track.title || ""}`.trim();
     const encodedSearch = encodeURIComponent(search);
     window.open(`https://music.youtube.com/search?q=${encodedSearch}`, "_blank", "noopener,noreferrer");
+  }
+
+  function handleMarkTrackPlayed(track, index) {
+    onTrackPlayed?.(album, getTrackMemoryKey(track, index));
   }
 
   function readFileAsDataUrl(file) {
@@ -286,6 +296,8 @@ function AlbumModal({
     : artworkUrls.front;
   const hasRearArtwork = Boolean(artworkUrls.rear);
   const hasTracklist = Array.isArray(tracklist) && tracklist.length > 0;
+  const albumKey = albumData.albumKey || albumData.release_id;
+  const isAlbumPlayed = playedAlbumKeys?.has(albumKey);
 
   return (
     <div className="album-modal" onClick={onClose}>
@@ -418,6 +430,13 @@ function AlbumModal({
                       <span className="album-modal__tracklist-duration">{track.duration || ""}</span>
                       <button
                         type="button"
+                        className={`album-modal__tracklist-played-button${playedTrackKeys?.includes(`${albumKey}::${getTrackMemoryKey(track, index)}`) ? " is-active" : ""}`}
+                        onClick={() => handleMarkTrackPlayed(track, index)}
+                      >
+                        {playedTrackKeys?.includes(`${albumKey}::${getTrackMemoryKey(track, index)}`) ? "Played" : "Mark played"}
+                      </button>
+                      <button
+                        type="button"
                         className="album-modal__tracklist-youtube-button"
                         onClick={() => handleOpenTrackYouTube(track)}
                       >
@@ -460,6 +479,13 @@ function AlbumModal({
             <hr className="album-modal__rule" />
 
             <div className="album-modal__actions">
+              <button
+                type="button"
+                onClick={() => onTrackPlayed?.(album)}
+                className={`album-modal__pill${isAlbumPlayed ? " is-active" : ""}`}
+              >
+                {isAlbumPlayed ? "✓ Played" : "Mark album played"}
+              </button>
               <button
                 onClick={handleFavoriteToggle}
                 className={`album-modal__pill${favorite ? " is-active" : ""}`}
