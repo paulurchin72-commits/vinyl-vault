@@ -1689,7 +1689,13 @@ function App() {
     const albumKey = getAlbumKey(record);
     const savedDetails = savedAlbumDetails[albumKey] || {};
     const artworkEntry = getArtworkEntry(record);
-    const releaseId = normalizeReleaseId(record.release_id || record.releaseId);
+    let releaseId = normalizeReleaseId(
+      record.release_id
+      || record.releaseId
+      || record["Release ID"]
+      || record.ReleaseID
+      || record.id
+    );
     const viewedAt = new Date().toISOString();
     const initialArtwork =
       customArtworkByAlbumKey[albumKey] || artworkEntry.coverUrl || record.cover || record.thumb || null;
@@ -1711,6 +1717,30 @@ function App() {
       release_id: releaseId,
       __openPathname: location.pathname,
     });
+
+    if (!releaseId) {
+      try {
+        const matches = await searchDiscogsReleases({
+          artist: record.Artist,
+          query: record.Title,
+        });
+        const bestMatch = matches[0];
+
+        if (bestMatch?.release_id) {
+          releaseId = normalizeReleaseId(bestMatch.release_id);
+          setSelectedAlbum((currentAlbum) =>
+            currentAlbum && currentAlbum.albumKey === albumKey
+              ? {
+                  ...currentAlbum,
+                  release_id: releaseId,
+                }
+              : currentAlbum
+          );
+        }
+      } catch {
+        // Leave the album open with its existing metadata if Discogs search fails.
+      }
+    }
 
     if (releaseId) {
       try {
