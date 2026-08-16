@@ -1689,6 +1689,7 @@ function App() {
     const albumKey = getAlbumKey(record);
     const savedDetails = savedAlbumDetails[albumKey] || {};
     const artworkEntry = getArtworkEntry(record);
+    const releaseId = normalizeReleaseId(record.release_id || record.releaseId);
     const viewedAt = new Date().toISOString();
     const initialArtwork =
       customArtworkByAlbumKey[albumKey] || artworkEntry.coverUrl || record.cover || record.thumb || null;
@@ -1707,8 +1708,38 @@ function App() {
     setSelectedAlbum({
       ...mergeAlbumWithArtwork(record, savedDetails, artworkEntry),
       albumKey,
+      release_id: releaseId,
       __openPathname: location.pathname,
     });
+
+    if (releaseId) {
+      try {
+        const releaseData = await getRelease(releaseId, {
+          artist: record.Artist,
+          title: record.Title,
+          year: record.Released,
+        });
+
+        setSelectedAlbum((currentAlbum) => {
+          if (!currentAlbum || currentAlbum.albumKey !== albumKey) {
+            return currentAlbum;
+          }
+
+          const releaseTracks = Array.isArray(releaseData?.tracks) && releaseData.tracks.length > 0
+            ? releaseData.tracks
+            : currentAlbum.tracks || [];
+
+          return {
+            ...currentAlbum,
+            label: releaseData?.label || currentAlbum.label || "",
+            genres: releaseData?.genres || currentAlbum.genres || "",
+            tracks: releaseTracks,
+          };
+        });
+      } catch {
+        // The modal still shows any track data already present on the record.
+      }
+    }
 
     setRecentlyViewed((currentAlbums) => {
       const nextAlbums = [

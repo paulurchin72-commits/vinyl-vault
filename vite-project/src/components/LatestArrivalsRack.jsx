@@ -72,7 +72,7 @@ function LatestArrivalsRack({ albums = [], onSelect = () => {} }) {
   }, []);
 
   function handleAlbumSelect(album) {
-    const releaseId = String(album?.releaseId || "");
+    const releaseId = String(album?.releaseId || album?.release_id || "");
     if (!releaseId) {
       onSelect(album);
       return;
@@ -104,8 +104,8 @@ function LatestArrivalsRack({ albums = [], onSelect = () => {} }) {
       <div className="latest-arrivals-rack__viewport" role="list" aria-label="Latest album sleeves">
         {preparedAlbums.length ? (
           preparedAlbums.map((album, index) => {
-            const releaseId = String(album.releaseId || `${album.title}-${album.artist}-${index}`);
-            const isActive = activeReleaseId === String(album.releaseId || "");
+            const releaseId = String(album.releaseId || album.release_id || `${album.title}-${album.artist}-${index}`);
+            const isActive = activeReleaseId === String(album.releaseId || album.release_id || "");
             const visuals = album.__visuals;
 
             return (
