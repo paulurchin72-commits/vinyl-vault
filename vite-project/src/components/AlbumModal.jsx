@@ -9,7 +9,33 @@ function normalizeTracklistEntries(tracks) {
     return [];
   }
 
-  return tracks
+  const flattenedTracks = tracks.flatMap((track, index) => {
+    if (typeof track === "string") {
+      return [{ title: track, position: String(index + 1) }];
+    }
+
+    if (!track || typeof track !== "object") {
+      return [];
+    }
+
+    if (Array.isArray(track.tracklist)) {
+      return track.tracklist.map((nestedTrack, nestedIndex) => ({
+        ...nestedTrack,
+        position: nestedTrack?.position || nestedTrack?.track_position || nestedTrack?.number || nestedTrack?.trackNo || String(nestedIndex + 1),
+      }));
+    }
+
+    if (Array.isArray(track.track)) {
+      return track.track.map((nestedTrack, nestedIndex) => ({
+        ...nestedTrack,
+        position: nestedTrack?.position || nestedTrack?.track_position || nestedTrack?.number || nestedTrack?.trackNo || String(nestedIndex + 1),
+      }));
+    }
+
+    return [track];
+  });
+
+  return flattenedTracks
     .filter((track) => track && typeof track === "object")
     .map((track, index) => ({
       position: String(track.position || track.track_position || track.number || track.trackNo || index + 1).trim(),

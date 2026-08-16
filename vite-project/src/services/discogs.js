@@ -130,16 +130,52 @@ function buildItunesFallbackResult(fallbackArtworkUrl, fallbackContext) {
 }
 
 function parseReleaseTracklistDetailed(data) {
-  if (!Array.isArray(data?.tracklist)) {
+  const candidateTracklist = Array.isArray(data?.tracklist)
+    ? data.tracklist
+    : Array.isArray(data?.tracks)
+      ? data.tracks
+      : [];
+
+  if (!candidateTracklist.length) {
     return [];
   }
 
-  return data.tracklist
+  const flattenedTracklist = candidateTracklist.flatMap((entry) => {
+    if (typeof entry === "string") {
+      return [{ title: entry }];
+    }
+
+    if (!entry || typeof entry !== "object") {
+      return [];
+    }
+
+    if (entry.type_ === "heading") {
+      return [];
+    }
+
+    if (Array.isArray(entry.tracklist)) {
+      return entry.tracklist.map((nestedEntry) => ({
+        ...nestedEntry,
+        position: nestedEntry?.position || entry.position || "",
+      }));
+    }
+
+    if (Array.isArray(entry.track)) {
+      return entry.track.map((nestedTrack) => ({
+        ...nestedTrack,
+        position: nestedTrack?.position || entry.position || "",
+      }));
+    }
+
+    return [entry];
+  });
+
+  return flattenedTracklist
     .filter((track) => track && track.type_ !== "heading")
     .map((track) => ({
-      position: String(track.position || "").trim(),
-      title: String(track.title || "").trim(),
-      duration: String(track.duration || "").trim(),
+      position: String(track.position || track.track_position || track.number || track.trackNo || "").trim(),
+      title: String(track.title || track.name || "").trim(),
+      duration: String(track.duration || track.length || "").trim(),
     }))
     .filter((track) => track.title);
 }
