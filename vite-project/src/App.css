@@ -2608,6 +2608,49 @@
     font-size: 12px;
   }
 
+  @media (max-width: 719px) {
+    .album-modal__tracklist-item {
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-areas:
+        "position name duration"
+        ". played youtube"
+        ". memory memory";
+      align-items: center;
+      gap: 8px;
+    }
+
+    .album-modal__tracklist-position {
+      grid-area: position;
+    }
+
+    .album-modal__tracklist-name {
+      grid-area: name;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .album-modal__tracklist-duration {
+      grid-area: duration;
+    }
+
+    .album-modal__tracklist-played-button {
+      grid-area: played;
+    }
+
+    .album-modal__tracklist-youtube-button {
+      grid-area: youtube;
+    }
+
+    .album-modal__tracklist-memory-button {
+      grid-area: memory;
+      justify-self: start;
+    }
+
+    .album-modal__track-memory-editor {
+      grid-column: 2 / -1;
+    }
+  }
+
   .album-modal__tracklist-item:last-child {
     border-bottom: 0;
   }
