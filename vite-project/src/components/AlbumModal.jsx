@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getRelease } from "../services/discogs";
+import { getRelease, getReleaseTracklist } from "../services/discogs";
 
 const MAX_CUSTOM_ARTWORK_DIMENSION = 800;
 const CUSTOM_ARTWORK_QUALITY = 0.78;
@@ -103,11 +103,20 @@ function AlbumModal({
             rear: nextRearArtworkUrl,
           });
 
-          const nextTracklist = normalizeTracklistEntries(
+          let nextTracklist = normalizeTracklistEntries(
             [releaseData?.tracks, albumData.tracks, albumData.tracklist].find(
               (candidateTracks) => Array.isArray(candidateTracks) && candidateTracks.length > 0
             ) || []
           );
+
+          if (!nextTracklist.length) {
+            try {
+              nextTracklist = normalizeTracklistEntries(await getReleaseTracklist(releaseId));
+            } catch {
+              // Keep the empty state if the direct track request is unavailable.
+            }
+          }
+
           setTracklist(nextTracklist);
         }
       } catch {

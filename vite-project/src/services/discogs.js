@@ -784,3 +784,14 @@ export async function getRelease(releaseId, fallbackContext = null) {
   inFlightReleaseById.set(normalizedReleaseId, request);
   return request;
 }
+
+export async function getReleaseTracklist(releaseId) {
+  const normalizedReleaseId = normalizeReleaseId(releaseId);
+  if (!normalizedReleaseId) {
+    return [];
+  }
+
+  const response = await requestReleaseWithRetry(normalizedReleaseId);
+  const data = await response.json();
+  return parseReleaseTracklistDetailed(data);
+}
