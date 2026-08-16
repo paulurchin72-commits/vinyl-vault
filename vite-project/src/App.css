@@ -1764,8 +1764,6 @@
   padding: 0;
   display: grid;
   gap: 8px;
-  max-height: 460px;
-  overflow: auto;
 }
 
 .rolling-stone-panel__item {
