@@ -2886,10 +2886,26 @@ function App() {
         })
         .slice(0, 12);
 
-      pendingRecords.forEach((record) => {
-        const albumKey = getAlbumKey(record);
-        artworkManager.ensureAlbumArtwork({ ...record, albumKey }, getRelease).catch(() => {});
-      });
+      let isCanceled = false;
+
+      async function loadTopRatedArtwork() {
+        await Promise.allSettled(
+          pendingRecords.map((record) => {
+            const albumKey = getAlbumKey(record);
+            return artworkManager.ensureAlbumArtwork({ ...record, albumKey }, getRelease);
+          })
+        );
+
+        if (!isCanceled) {
+          refreshArtworkEntries();
+        }
+      }
+
+      void loadTopRatedArtwork();
+
+      return () => {
+        isCanceled = true;
+      };
     }, [rollingStoneRows, artworkEntries, customArtworkByAlbumKey]);
 
     const ownedCount = rollingStoneRows.filter((entry) => Boolean(entry.ownedRecord)).length;
