@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import Papa from "papaparse";
-import { getRelease, searchDiscogsReleases } from "./services/discogs";
+import { getArtworkForContext, getRelease, searchDiscogsReleases } from "./services/discogs";
 import artworkManager from "./services/artworkManager";
 import AlbumCard from "./components/AlbumCard";
 import AddMusicPage from "./components/AddMusicPage";
@@ -2708,6 +2708,8 @@ function App() {
   }
 
   function TopRatedPage() {
+    const [topRatedArtworkByAlbumKey, setTopRatedArtworkByAlbumKey] = useState({});
+
     function normalizeLooseMatchText(value) {
       return normalizeMatchText(value)
         .replace(/\([^)]*\)|\[[^\]]*\]/g, " ")
@@ -2878,11 +2880,22 @@ function App() {
           const artworkEntry = artworkEntries[albumKey] || { status: "idle", coverUrl: null };
 
           return (
+            !topRatedArtworkByAlbumKey[albumKey] &&
             !customArtworkByAlbumKey[albumKey] &&
             !artworkEntry.coverUrl &&
             artworkEntry.status !== "loading" &&
             artworkEntry.status !== "missing"
           );
+        })
+        .slice(0, 12);
+      const pendingEntries = rollingStoneRows
+        .filter((entry) => {
+          if (entry.ownedRecord) {
+            return false;
+          }
+
+          const entryKey = getRollingStoneEntryKey(entry);
+          return !topRatedArtworkByAlbumKey[entryKey] && !entry.thumb && !entry.cover;
         })
         .slice(0, 12);
 
@@ -2895,9 +2908,39 @@ function App() {
             return artworkManager.ensureAlbumArtwork({ ...record, albumKey }, getRelease);
           })
         );
+        const fallbackResults = await Promise.allSettled(
+          pendingEntries.map(async (entry) => ({
+            entryKey: getRollingStoneEntryKey(entry),
+            artworkUrl: await getArtworkForContext({
+              artist: entry.artist,
+              title: entry.album,
+            }),
+          }))
+        );
 
         if (!isCanceled) {
-          refreshArtworkEntries();
+          setTopRatedArtworkByAlbumKey((currentArtwork) => {
+            const nextArtwork = { ...currentArtwork };
+            let hasNewArtwork = false;
+
+            pendingRecords.forEach((record) => {
+              const albumKey = getAlbumKey(record);
+              const artworkEntry = artworkManager.getEntry(albumKey);
+              if (artworkEntry.coverUrl) {
+                nextArtwork[albumKey] = artworkEntry.coverUrl;
+                hasNewArtwork = true;
+              }
+            });
+
+            fallbackResults.forEach((result) => {
+              if (result.status === "fulfilled" && result.value.artworkUrl) {
+                nextArtwork[result.value.entryKey] = result.value.artworkUrl;
+                hasNewArtwork = true;
+              }
+            });
+
+            return hasNewArtwork ? nextArtwork : currentArtwork;
+          });
         }
       }
 
@@ -2906,7 +2949,7 @@ function App() {
       return () => {
         isCanceled = true;
       };
-    }, [rollingStoneRows, artworkEntries, customArtworkByAlbumKey]);
+    }, [rollingStoneRows, artworkEntries, customArtworkByAlbumKey, topRatedArtworkByAlbumKey]);
 
     const ownedCount = rollingStoneRows.filter((entry) => Boolean(entry.ownedRecord)).length;
 
@@ -2954,12 +2997,18 @@ function App() {
                 const artworkUrl = entry.ownedRecord
                   ? (
                       customArtworkByAlbumKey[getAlbumKey(entry.ownedRecord)] ||
+                      topRatedArtworkByAlbumKey[getAlbumKey(entry.ownedRecord)] ||
                       getArtworkEntry(entry.ownedRecord).coverUrl ||
                       entry.ownedRecord.cover ||
                       entry.ownedRecord.thumb ||
                       null
                     )
-                  : (entry.thumb || entry.cover || null);
+                    : (
+                        entry.thumb
+                        || entry.cover
+                        || topRatedArtworkByAlbumKey[getRollingStoneEntryKey(entry)]
+                        || null
+                      );
 
                 return (
                 <li key={`${entry.rank}-${entry.artist}-${entry.album}`} className="rolling-stone-panel__item">

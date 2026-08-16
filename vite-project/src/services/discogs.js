@@ -235,6 +235,10 @@ async function resolveFallbackArtworkUrl(fallbackContext) {
   return searchMusicBrainzArtwork(fallbackContext);
 }
 
+export async function getArtworkForContext(fallbackContext) {
+  return resolveFallbackArtworkUrl(fallbackContext);
+}
+
 function preloadArtworkImage(url) {
   if (!url || typeof Image === "undefined") {
     return;
