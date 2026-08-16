@@ -1735,6 +1735,16 @@ function App() {
     setSelectedAlbum(null);
   }
 
+  function handleNavigationClick(item) {
+    dismissAlbumModalForNavigation();
+
+    if (item.to === "/collection") {
+      setActiveFilter("all");
+      setCollectionLetter("ALL");
+      setSearch("");
+    }
+  }
+
   async function openAlbum(record) {
     const albumKey = getAlbumKey(record);
     const savedDetails = savedAlbumDetails[albumKey] || {};
@@ -3290,7 +3300,7 @@ function App() {
                 <li key={item.to}>
                   <NavLink
                     to={item.to}
-                    onClick={dismissAlbumModalForNavigation}
+                    onClick={() => handleNavigationClick(item)}
                     className={({ isActive }) => `app-nav__button${isActive ? " is-active" : ""}`}
                   >
                     {item.label}
@@ -3366,7 +3376,7 @@ function App() {
               <NavLink
                 key={item.to}
                 to={item.to}
-                onClick={dismissAlbumModalForNavigation}
+                onClick={() => handleNavigationClick(item)}
                 className={({ isActive }) =>
                   `app-nav__button app-nav__button--mobile${isActive ? " is-active" : ""}`
                 }
