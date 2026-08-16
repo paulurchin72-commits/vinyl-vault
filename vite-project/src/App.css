@@ -1764,12 +1764,20 @@
   padding: 0;
   display: grid;
   gap: 8px;
-  max-height: min(70vh, 680px);
-  overflow-y: auto;
+  height: min(70svh, 680px);
+  min-height: 220px;
+  overflow-y: scroll;
   overflow-x: hidden;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
+}
+
+@media (max-width: 760px) {
+  .rolling-stone-panel__list {
+    height: min(62svh, 560px);
+  }
 }
 
 .rolling-stone-panel__item {
