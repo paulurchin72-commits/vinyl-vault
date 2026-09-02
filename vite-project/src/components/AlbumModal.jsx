@@ -77,6 +77,8 @@ function AlbumModal({
   const artworkInputRef = useRef(null);
 
   useEffect(() => {
+    const initialTrackMemoryKey = albumData.__openTrackMemoryKey || null;
+
     setMemory(albumData.memory || "");
     setFavorite(Boolean(albumData.favorite));
     setRating(albumData.rating || 5);
@@ -84,8 +86,8 @@ function AlbumModal({
     setUploadMessage("");
     setArtworkSide("front");
     setTracklist(normalizeTracklistEntries(albumData.tracks));
-    setActiveTrackMemoryKey(null);
-    setTrackMemoryDraft("");
+    setActiveTrackMemoryKey(initialTrackMemoryKey);
+    setTrackMemoryDraft(initialTrackMemoryKey ? albumData.trackMemories?.[initialTrackMemoryKey] || "" : "");
     setTrackMemoryMessage("");
   }, [album]);
 

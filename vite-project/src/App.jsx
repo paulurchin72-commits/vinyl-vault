@@ -329,7 +329,7 @@ function normalizeSavedAlbumDetails(value) {
           trackMemories: entry.trackMemories && typeof entry.trackMemories === "object" && !Array.isArray(entry.trackMemories)
             ? Object.fromEntries(
                 Object.entries(entry.trackMemories)
-                  .filter(([trackKey, trackMemory]) => trackKey && typeof trackMemory === "string")
+                  .filter(([trackKey, trackMemory]) => trackKey && typeof trackMemory === "string" && trackMemory.trim())
               )
             : {},
           favorite: Boolean(entry.favorite),
@@ -1603,6 +1603,7 @@ function App() {
           record: recordForOpen,
           artworkUrl,
           memoryType: "track",
+          trackKey,
         });
       });
     });
@@ -1953,8 +1954,14 @@ function App() {
       const currentEntry = currentDetails[album.albumKey] || {};
       const nextTrackMemories = {
         ...(currentEntry.trackMemories || {}),
-        [trackKey]: memoryValue,
       };
+
+      if (String(memoryValue || "").trim()) {
+        nextTrackMemories[trackKey] = memoryValue;
+      } else {
+        delete nextTrackMemories[trackKey];
+      }
+
       const nextDetails = {
         ...currentDetails,
         [album.albumKey]: {
@@ -1972,17 +1979,99 @@ function App() {
       return nextDetails;
     });
 
-    setSelectedAlbum((currentAlbum) =>
-      currentAlbum && currentAlbum.albumKey === album.albumKey
-        ? {
-            ...currentAlbum,
-            trackMemories: {
-              ...(currentAlbum.trackMemories || {}),
-              [trackKey]: memoryValue,
-            },
-          }
-        : currentAlbum
-    );
+    setSelectedAlbum((currentAlbum) => {
+      if (!currentAlbum || currentAlbum.albumKey !== album.albumKey) {
+        return currentAlbum;
+      }
+
+      const nextTrackMemories = {
+        ...(currentAlbum.trackMemories || {}),
+      };
+
+      if (String(memoryValue || "").trim()) {
+        nextTrackMemories[trackKey] = memoryValue;
+      } else {
+        delete nextTrackMemories[trackKey];
+      }
+
+      return {
+        ...currentAlbum,
+        trackMemories: nextTrackMemories,
+      };
+    });
+  }
+
+  function deleteMemoryEntry(entry) {
+    if (!entry?.albumKey) {
+      return;
+    }
+
+    setSavedAlbumDetails((currentDetails) => {
+      const currentEntry = currentDetails[entry.albumKey] || {};
+      const nextEntry = {
+        ...currentEntry,
+      };
+
+      if (entry.memoryType === "track" && entry.trackKey) {
+        const nextTrackMemories = {
+          ...(currentEntry.trackMemories || {}),
+        };
+        delete nextTrackMemories[entry.trackKey];
+        nextEntry.trackMemories = nextTrackMemories;
+      } else {
+        nextEntry.memory = "";
+      }
+
+      const nextDetails = {
+        ...currentDetails,
+        [entry.albumKey]: nextEntry,
+      };
+
+      try {
+        localStorage.setItem(SAVED_MEMORIES_KEY, JSON.stringify(nextDetails));
+      } catch {
+        // Keep the deletion in memory if storage is unavailable.
+      }
+
+      return nextDetails;
+    });
+
+    setSelectedAlbum((currentAlbum) => {
+      if (!currentAlbum || currentAlbum.albumKey !== entry.albumKey) {
+        return currentAlbum;
+      }
+
+      if (entry.memoryType === "track" && entry.trackKey) {
+        const nextTrackMemories = {
+          ...(currentAlbum.trackMemories || {}),
+        };
+        delete nextTrackMemories[entry.trackKey];
+
+        return {
+          ...currentAlbum,
+          trackMemories: nextTrackMemories,
+        };
+      }
+
+      return {
+        ...currentAlbum,
+        memory: "",
+      };
+    });
+  }
+
+  function editMemoryEntry(entry) {
+    if (!entry?.record) {
+      return;
+    }
+
+    const record = entry.memoryType === "track" && entry.trackKey
+      ? {
+          ...entry.record,
+          __openTrackMemoryKey: entry.trackKey,
+        }
+      : entry.record;
+    openAlbum(record);
   }
 
   function markPlayed(album, trackKey = "") {
@@ -3182,6 +3271,26 @@ function App() {
                             {entry.released ? ` (${entry.released})` : ""}
                           </button>
                           <p className="memories-group__text">{entry.memory}</p>
+                          <div className="memories-group__actions" aria-label="Memory actions">
+                            <button
+                              type="button"
+                              className="memories-group__action"
+                              onClick={() => editMemoryEntry(entry)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="memories-group__action memories-group__action--danger"
+                              onClick={() => {
+                                if (window.confirm("Delete this memory?")) {
+                                  deleteMemoryEntry(entry);
+                                }
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </li>
