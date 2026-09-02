@@ -2713,7 +2713,8 @@ function App() {
             greeting={greeting}
             name="Music and Memories"
             subtitle="Pick your next spin."
-            extra={<HomeTrackSearch records={records} trackIndex={trackIndex} onOpenAlbum={openAlbum} />}
+            extra={<HomeTrackSearch onOpenAlbum={openAlbum} />}
+            logo={mmMonogramLogo}
           />
         }
         stats={<CollectionStats items={dashboardStats} />}
