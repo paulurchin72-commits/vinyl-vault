@@ -21,6 +21,13 @@ import RecentlyAdded from "./components/dashboard/RecentlyAdded";
 import SettingsPage from "./components/SettingsPage";
 import TonightsPick from "./components/dashboard/TonightsPick";
 import PlaceholderPage from "./components/PlaceholderPage";
+import {
+  loadLocalTrackIndex,
+  mergeTrackIndexes,
+  normalizeTrackIndexEntries,
+  saveLocalTrackIndex,
+  upsertTrackIndexEntry,
+} from "./services/trackIndex";
 import mmMonogramLogo from "./assets/mm-monogram-logo.svg";
 import "./App.css";
 
@@ -75,6 +82,7 @@ const MANUAL_COLLECTION_WORTH_KEY = "the-memory-box:manual-collection-worth";
 const WORTH_BY_RELEASE_KEY = "the-memory-box:worth-by-release";
 const WORTH_AUTO_FULL_REPRICE_KEY = "the-memory-box:worth-auto-full-reprice";
 const ROLLING_STONE_GIST_API = "https://api.github.com/gists/232302a4ba29fd8f5f0d0352ef55d2b9";
+const COLLECTION_TRACK_INDEX_URL = "/collection-track-index.json";
 const RECENTLY_VIEWED_LIMIT = 10;
 const WORTH_REFRESH_BATCH_SIZE = 12;
 const WORTH_REFRESH_INTERVAL_MS = 3 * 60 * 1000;
@@ -694,6 +702,8 @@ function App() {
   );
   const [rollingStoneList, setRollingStoneList] = useState(() => loadRollingStoneList());
   const [rollingStoneStatus, setRollingStoneStatus] = useState("");
+  const [baseTrackIndex, setBaseTrackIndex] = useState([]);
+  const [localTrackIndex, setLocalTrackIndex] = useState(() => loadLocalTrackIndex());
   const [collectionWorthEstimate, setCollectionWorthEstimate] = useState({
     total: 0,
     sampled: 0,
@@ -722,6 +732,10 @@ function App() {
   );
   const [tonightPickShuffleSeed, setTonightPickShuffleSeed] = useState(0);
   const records = useMemo(() => [...addedRecords, ...baseRecords], [addedRecords, baseRecords]);
+  const trackIndex = useMemo(
+    () => mergeTrackIndexes(baseTrackIndex, localTrackIndex),
+    [baseTrackIndex, localTrackIndex]
+  );
   const recentlyViewedAlbumKeys = recentlyViewed.map((entry) => entry.albumKey);
   const playedAlbumKeySet = useMemo(() => new Set(playedAlbumKeys), [playedAlbumKeys]);
 
@@ -788,6 +802,42 @@ function App() {
   useEffect(() => {
   }, [records]);
 
+  useEffect(() => {
+    let isCanceled = false;
+
+    async function loadBaseTrackIndex() {
+      try {
+        const response = await fetch(COLLECTION_TRACK_INDEX_URL, { cache: "no-cache" });
+        if (!response.ok) {
+          return;
+        }
+
+        const nextTrackIndex = normalizeTrackIndexEntries(await response.json());
+        if (!isCanceled) {
+          setBaseTrackIndex(nextTrackIndex);
+        }
+      } catch {
+        if (!isCanceled) {
+          setBaseTrackIndex([]);
+        }
+      }
+    }
+
+    void loadBaseTrackIndex();
+
+    return () => {
+      isCanceled = true;
+    };
+  }, []);
+
+  function saveAlbumTrackIndex(record, tracks) {
+    if (!record || !Array.isArray(tracks) || !tracks.length) {
+      return;
+    }
+
+    setLocalTrackIndex((currentIndex) => upsertTrackIndexEntry(currentIndex, record, tracks));
+  }
+
   function addRecordToCollection(record) {
     const normalizedReleaseId = normalizeReleaseId(record.release_id || record.releaseId);
     const nextRecord = {
@@ -828,6 +878,10 @@ function App() {
       setMessage(`Added ${nextRecord.Title} by ${nextRecord.Artist} to your collection.`);
       return nextRecords;
     });
+
+    if (Array.isArray(record.tracks) && record.tracks.length) {
+      saveAlbumTrackIndex(nextRecord, record.tracks);
+    }
 
     navigate("/collection");
   }
@@ -1819,6 +1873,14 @@ function App() {
             ? releaseData.tracks
             : currentAlbum.tracks || [];
 
+          saveAlbumTrackIndex(
+            {
+              ...record,
+              release_id: releaseId,
+            },
+            releaseTracks
+          );
+
           return {
             ...currentAlbum,
             label: releaseData?.label || currentAlbum.label || "",
@@ -2185,6 +2247,7 @@ function App() {
         rollingStoneList,
         manualCollectionWorth,
         worthByRelease,
+        localTrackIndex,
       },
     };
 
@@ -2224,6 +2287,7 @@ function App() {
     const nextRollingStoneList = normalizeRollingStoneEntries(backupData?.rollingStoneList || []);
     const nextManualCollectionWorth = normalizeManualCollectionWorth(backupData?.manualCollectionWorth);
     const nextWorthByRelease = normalizeWorthByRelease(backupData?.worthByRelease || {});
+    const nextLocalTrackIndex = normalizeTrackIndexEntries(backupData?.localTrackIndex || backupData?.trackIndex || []);
 
     setAddedRecords(nextAddedRecords);
     setSavedAlbumDetails(nextSavedAlbumDetails);
@@ -2234,6 +2298,7 @@ function App() {
     setRollingStoneList(nextRollingStoneList);
     setManualCollectionWorth(nextManualCollectionWorth);
     setWorthByRelease(nextWorthByRelease);
+    setLocalTrackIndex(nextLocalTrackIndex);
     setRollingStoneStatus(nextRollingStoneList.length ? `Imported ${nextRollingStoneList.length} tracker entries.` : "");
     setSelectedAlbum(null);
 
@@ -2245,6 +2310,7 @@ function App() {
       localStorage.setItem(PLAYED_TRACKS_KEY, JSON.stringify(nextPlayedTrackKeys));
       localStorage.setItem(CUSTOM_ARTWORK_KEY, JSON.stringify(nextCustomArtwork));
       localStorage.setItem(ROLLING_STONE_LIST_KEY, JSON.stringify(nextRollingStoneList));
+      saveLocalTrackIndex(nextLocalTrackIndex);
       if (nextManualCollectionWorth) {
         localStorage.setItem(MANUAL_COLLECTION_WORTH_KEY, JSON.stringify(nextManualCollectionWorth));
       } else {
@@ -2640,7 +2706,7 @@ function App() {
             greeting={greeting}
             name="Music and Memories"
             subtitle="Pick your next spin."
-            extra={<HomeTrackSearch onOpenAlbum={openAlbum} />}
+            extra={<HomeTrackSearch records={records} trackIndex={trackIndex} onOpenAlbum={openAlbum} />}
           />
         }
         stats={<CollectionStats items={dashboardStats} />}

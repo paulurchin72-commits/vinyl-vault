@@ -6,10 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build-track-index": "node scripts/build-track-index.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "papaparse": "^5.5.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2"
