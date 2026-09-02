@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 
 function AlbumCard({
   record,
@@ -15,7 +15,14 @@ function AlbumCard({
   const cardRef = useRef(null);
   const hasTriggeredVisibility = useRef(false);
   const retryCountRef = useRef(0);
-  const maxRetryAttempts = 2;
+  const latestRecordRef = useRef(record);
+  const latestOnVisibleRef = useRef(onVisible);
+  const maxRetryAttempts = 1;
+
+  useEffect(() => {
+    latestRecordRef.current = record;
+    latestOnVisibleRef.current = onVisible;
+  });
 
   function handleKeyDown(event) {
     if (event.key === "Enter" || event.key === " ") {
@@ -49,7 +56,7 @@ function AlbumCard({
 
     if (typeof IntersectionObserver === "undefined") {
       hasTriggeredVisibility.current = true;
-      onVisible(record);
+      latestOnVisibleRef.current(latestRecordRef.current);
       return undefined;
     }
 
@@ -62,11 +69,11 @@ function AlbumCard({
         }
 
         hasTriggeredVisibility.current = true;
-        onVisible(record);
+        latestOnVisibleRef.current(latestRecordRef.current);
         observer.disconnect();
       },
       {
-        rootMargin: "480px 0px",
+        rootMargin: "160px 0px",
         threshold: 0.01,
       }
     );
@@ -76,7 +83,7 @@ function AlbumCard({
     return () => {
       observer.disconnect();
     };
-  }, [onVisible, record]);
+  }, [albumKey]);
 
   useEffect(() => {
     if (cover || artworkStatus !== "idle") {
@@ -103,23 +110,25 @@ function AlbumCard({
     const retryTimerId = window.setTimeout(() => {
       hasTriggeredVisibility.current = false;
       retryCountRef.current += 1;
-      onVisible(record);
+      latestOnVisibleRef.current(latestRecordRef.current);
     }, retryDelayMs);
 
     return () => {
       window.clearTimeout(retryTimerId);
     };
-  }, [cover, artworkStatus, onVisible, record]);
+  }, [albumKey, cover, artworkStatus]);
 
-  if (isTracedAlbum) {
-    if (traceStore.__MM_TRACE_LAST_ALBUM_CARD_COVER__ !== cover) {
+  useEffect(() => {
+    if (!isTracedAlbum || !traceStore || traceStore.__MM_TRACE_LAST_ALBUM_CARD_COVER__ === cover) {
+      return;
+    }
+
       traceStore.__MM_TRACE_LAST_ALBUM_CARD_COVER__ = cover;
       console.log("[MM TRACE] 6.AlbumCard cover", {
         albumKey,
         cover,
       });
-    }
-  }
+  }, [albumKey, cover, isTracedAlbum, traceStore]);
 
   return (
     <li
@@ -190,4 +199,4 @@ function AlbumCard({
   );
 }
 
-export default AlbumCard;
+export default memo(AlbumCard);

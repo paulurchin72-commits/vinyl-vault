@@ -13,6 +13,7 @@ function TonightsPick({ album, isFavorite, onOpenAlbum, onOpenYouTubeMusic, onTo
     title: album?.title || album?.record?.Title,
     year: album?.year || album?.record?.Released,
   });
+  const visibleArtworkUrl = artworkUrl || album?.artworkUrl || album?.record?.cover || album?.record?.thumb || null;
 
   return (
     <section className="dashboard-panel dashboard-pick glass-panel" aria-label="Tonight's pick">
@@ -31,14 +32,14 @@ function TonightsPick({ album, isFavorite, onOpenAlbum, onOpenYouTubeMusic, onTo
       {album ? (
         <>
           <button type="button" className="dashboard-pick__art" onClick={() => onOpenAlbum(album.record)}>
-            {loading && !artworkUrl ? (
+            {loading && !visibleArtworkUrl ? (
               <div className="artwork-state artwork-state--loading" aria-label="Loading artwork">
                 <span className="artwork-spinner" />
                 <span className="artwork-state__label">Loading artwork</span>
               </div>
-            ) : artworkUrl ? (
+            ) : visibleArtworkUrl ? (
               <img
-                src={artworkUrl}
+                src={visibleArtworkUrl}
                 alt={album.title}
                 className="dashboard-pick__image"
                 loading="eager"

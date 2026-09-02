@@ -2516,19 +2516,25 @@ function App() {
             const savedDetails = savedAlbumDetails[albumKey] || {};
 
             return (
-              <AlbumCard
-                key={getRecordListKey(record)}
-                record={record}
-                onClick={openAlbum}
-                onArtistClick={openArtistView}
-                onVisible={handleAlbumCardVisible}
-                id={getAlbumCardId(albumKey)}
-                highlighted={highlightBySurprise && surpriseSelection?.albumKey === albumKey}
-                favorite={savedDetails.favorite}
-                rating={savedDetails.rating}
-                cover={getArtworkEntry(record).coverUrl}
-                artworkStatus={getArtworkEntry(record).status}
-              />
+              (() => {
+                const artworkEntry = getArtworkEntry(record);
+
+                return (
+                  <AlbumCard
+                    key={getRecordListKey(record)}
+                    record={record}
+                    onClick={openAlbum}
+                    onArtistClick={openArtistView}
+                    onVisible={handleAlbumCardVisible}
+                    id={getAlbumCardId(albumKey)}
+                    highlighted={highlightBySurprise && surpriseSelection?.albumKey === albumKey}
+                    favorite={savedDetails.favorite}
+                    rating={savedDetails.rating}
+                    cover={artworkEntry.coverUrl}
+                    artworkStatus={artworkEntry.status}
+                  />
+                );
+              })()
             );
           })}
         </ul>
@@ -2536,7 +2542,7 @@ function App() {
     );
   }
 
-  function HomePage() {
+  function renderHomePage() {
     const latestArrivalAlbums = [...records]
       .map((record) => {
         const dateAddedRaw = record["Date Added"] || record.dateAdded || record.DateAdded || "";
@@ -2572,6 +2578,7 @@ function App() {
           title: tonightRecord.Title || "Unknown Album",
           year: tonightRecord.Released || "Unknown",
           release_id: normalizeReleaseId(tonightRecord.release_id || tonightRecord.releaseId),
+          artworkUrl: getArtworkEntry(tonightRecord).coverUrl || tonightRecord.cover || tonightRecord.thumb || null,
           record: tonightRecord,
         }
       : null;
@@ -3436,7 +3443,7 @@ function App() {
 
           <Routes>
             <Route path="/" element={<Navigate to="/home" replace />} />
-            <Route path="/home" element={<HomePage />} />
+            <Route path="/home" element={renderHomePage()} />
             <Route path="/collection" element={renderCollectionPage()} />
             <Route path="/add-music" element={<AddMusicPage onAddRecord={addRecordToCollection} />} />
             <Route path="/artists" element={<ArtistsRoute />} />
