@@ -2,23 +2,25 @@ import { useArtwork } from "../../artwork-v2/useArtwork";
 
 function ContinueListeningCard({ album, onSelect, onArtistClick }) {
   const releaseId = album.release_id || album.record?.release_id || album.record?.releaseId || null;
+  const storedArtworkUrl = album.artworkUrl || album.cover || album.thumb || album.record?.artworkUrl || album.record?.cover || album.record?.thumb || null;
   const { artworkUrl, loading } = useArtwork(releaseId, {
     artist: album.artist || album.record?.Artist,
     title: album.title || album.record?.Title,
     year: album.year || album.record?.Released,
   });
+  const displayArtworkUrl = artworkUrl || storedArtworkUrl;
 
   return (
     <article className="dashboard-carousel-card">
       <button type="button" className="dashboard-carousel-card__art" onClick={() => onSelect(album.record)}>
-        {loading && !artworkUrl ? (
+        {loading && !displayArtworkUrl ? (
           <div className="artwork-state artwork-state--loading" aria-label="Loading artwork">
             <span className="artwork-spinner" />
             <span className="artwork-state__label">Loading artwork</span>
           </div>
-        ) : artworkUrl ? (
+        ) : displayArtworkUrl ? (
           <img
-            src={artworkUrl}
+            src={displayArtworkUrl}
             alt={album.title || "Album artwork"}
             className="dashboard-carousel-card__image"
             loading="lazy"
@@ -26,8 +28,7 @@ function ContinueListeningCard({ album, onSelect, onArtistClick }) {
           />
         ) : (
           <div className="artwork-state artwork-state--placeholder" aria-label="No artwork available">
-            <span className="artwork-state__monogram">M&amp;M</span>
-            <span className="artwork-state__label">Music &amp; Memories</span>
+            <span className="artwork-state__label">Artwork unavailable</span>
           </div>
         )}
       </button>
