@@ -197,12 +197,12 @@
 }
 
 .dashboard-home-search {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: stretch;
   gap: 6px;
-  flex: 1 1 300px;
-  min-width: min(100%, 320px);
-  flex-wrap: wrap;
+  width: 100%;
+  min-width: 0;
   opacity: 0.88;
   transition: opacity 180ms ease;
 }
@@ -212,14 +212,15 @@
 }
 
 .dashboard-home-search__input {
-  width: min(260px, 100%);
+  width: 100%;
   min-width: 0;
-  padding: 9px 11px;
+  min-height: 42px;
+  padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(8, 8, 8, 0.36);
   color: #f9f1df;
-  font-size: 13px;
+  font-size: 16px;
 }
 
 .dashboard-home-search__input::placeholder {
@@ -232,6 +233,7 @@
 }
 
 .dashboard-home-search__button {
+  min-height: 42px;
   white-space: nowrap;
 }
 
@@ -251,13 +253,15 @@
   list-style: none;
   display: grid;
   gap: 8px;
+  max-height: min(52vh, 420px);
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .dashboard-track-search-results__item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: stretch;
   gap: 8px;
   padding: 9px 10px;
   border-radius: 12px;
@@ -268,6 +272,7 @@
 .dashboard-track-search-results__meta {
   display: grid;
   gap: 2px;
+  min-width: 0;
 }
 
 .dashboard-track-search-results__track,
@@ -291,9 +296,15 @@
 }
 
 .dashboard-track-search-results__actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+.dashboard-track-search-results__actions .collection-button,
+.dashboard-track-search-results__actions .surprise-button {
+  min-height: 38px;
+  padding-inline: 10px;
 }
 
 .dashboard-featured-album {
@@ -862,12 +873,20 @@
   }
 
   .dashboard-home-search {
-    flex: 1 1 520px;
+    grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) auto;
   }
 
   .dashboard-home-search__input {
-    flex: 1 1 200px;
-    width: auto;
+    font-size: 13px;
+  }
+
+  .dashboard-track-search-results__item {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .dashboard-track-search-results__actions {
+    grid-template-columns: auto auto;
   }
 
   .dashboard-stats {
