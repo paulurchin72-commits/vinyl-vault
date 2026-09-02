@@ -10,8 +10,6 @@ export function useArtwork(releaseId, fallbackContext = null) {
     let isCancelled = false;
 
     async function loadArtwork() {
-      console.log("useArtwork releaseId:", releaseId);
-
       if (releaseId === null || releaseId === undefined || releaseId === "") {
         setArtworkUrl(null);
         setLoading(false);
@@ -34,14 +32,11 @@ export function useArtwork(releaseId, fallbackContext = null) {
 
       try {
         const nextArtworkUrl = await getArtworkUrl(releaseId, fallbackContext);
-        console.log("getArtworkUrl returned:", nextArtworkUrl);
 
         if (!isCancelled) {
           setArtworkUrl(nextArtworkUrl);
         }
       } catch (nextError) {
-        console.log("Artwork error:", nextError);
-
         if (!isCancelled) {
           setArtworkUrl(null);
           setError(nextError instanceof Error ? nextError : new Error("Failed to load artwork."));

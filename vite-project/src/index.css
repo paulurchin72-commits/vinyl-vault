@@ -24,7 +24,7 @@ html {
 
 body {
   margin: 0;
-  min-height: 100vh;
+  min-height: 100dvh;
   background:
     radial-gradient(circle at top, rgba(230, 179, 91, 0.12), transparent 30%),
     linear-gradient(180deg, rgba(8, 7, 6, 0.74), rgba(8, 7, 6, 0.96));
@@ -41,7 +41,7 @@ a {
 }
 
 #root {
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 ::selection {
